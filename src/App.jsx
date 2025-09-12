@@ -308,8 +308,16 @@ function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddF
                     <button type="button" onClick={handleAddFavorite} className="w-full bg-yellow-400 text-yellow-900 font-semibold py-2 px-4 rounded-lg hover:bg-yellow-500 transition">★ 현재 구간 즐겨찾기 추가</button>
                 </div>
                 
-                <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">출발일 / 시각</label><div className="grid grid-cols-2 gap-4"><input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /><input type="time" name="time" defaultValue={now} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div></div>
-                <div className="mb-6"><label htmlFor="adults" className="block text-gray-700 text-sm font-bold mb-2">성인 승객수</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}명</option>)}</select></div>
+                <div className="mb-4">
+                    <label className="block text-gray-700 text-sm font-bold mb-2">출발일 / 시각</label>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <input type="time" name="time" defaultValue={now} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                </div>
+                <div className="mb-6">
+                    <label htmlFor="adults" className="block text-gray-700 text-sm font-bold mb-2">성인 승객수</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}명</option>)}</select>
+                </div>
                 <button type="submit" disabled={isLoading} className="w-full bg-blue-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-gray-400">{isLoading ? '조회 중...' : '조회하기'}</button>
             </form>
         </>
