@@ -16,3 +16,4 @@ python-dotenv
 requests
 urllib3
 Werkzeug
+pytz

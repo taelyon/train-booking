@@ -3,11 +3,9 @@ import sys
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
-# --- 문제 해결 코드 시작 ---
 # 현재 파일의 디렉터리를 Python 경로에 추가하여
 # Vercel 환경에서 srt.py와 ktx.py를 찾을 수 있도록 합니다.
 sys.path.insert(0, os.path.dirname(__file__))
-# --- 문제 해결 코드 끝 ---
 
 import srt
 import ktx
@@ -15,21 +13,16 @@ import ktx
 load_dotenv()
 app = Flask(__name__)
 
-# --- API 엔드포인트 수정 ---
-# React 앱이 데이터를 요청할 수 있도록 모든 경로를 JSON을 반환하는 API로 변경합니다.
-
 @app.route("/api/stations")
 def get_stations():
     stations = {
         "SRT": srt.STATION_CODE.keys(),
         "KTX": ktx.Korail.get_station_codes(name_only=True)
     }
-    # sorted(list(set(stations["SRT"] + stations["KTX"])))
     return jsonify({
         "SRT": sorted(list(stations["SRT"])),
         "KTX": sorted(list(stations["KTX"]))
     })
-
 
 @app.route("/api/search")
 def search_trains():
@@ -43,20 +36,22 @@ def search_trains():
         trains_data = []
         if train_type == 'SRT':
             srt_client = srt.SRT(srt_id="-", srt_pw="-", auto_login=False)
+            # available_only 인자를 제거하여 모든 열차를 가져옵니다.
             trains = srt_client.search_train(
-                dep=dep_station, arr=arr_station, date=date_str, time=time_str, available_only=False
+                dep=dep_station, arr=arr_station, date=date_str, time=time_str
             )
             for train in trains:
                 trains_data.append(train.dump(format="json"))
 
         elif train_type == 'KTX':
             ktx_client = ktx.Korail(korail_id="-", korail_pw="-", auto_login=False)
+            # include_no_seats 인자를 제거하여 모든 열차를 가져옵니다.
             trains = ktx_client.search_train(
                 dep=dep_station, arr=arr_station, date=date_str, time=time_str, 
-                include_no_seats=True, train_type=ktx.TrainType.KTX
+                train_type=ktx.TrainType.KTX
             )
             for train in trains:
-                trains_data.append(vars(train)) # 객체를 dict로 변환
+                trains_data.append(vars(train))
 
         return jsonify(trains_data)
 
@@ -81,7 +76,7 @@ def reserve():
                 raise Exception("SRT 로그인 정보가 서버에 설정되지 않았습니다.")
             
             client = srt.SRT(srt_id, srt_pw)
-            all_trains = client.search_train(dep=train_info['dep_station_name'], arr=train_info['arr_station_name'], date=train_info['dep_date'], time="000000", available_only=False)
+            all_trains = client.search_train(dep=train_info['dep_station_name'], arr=train_info['arr_station_name'], date=train_info['dep_date'], time="000000")
             
             target_train = next((t for t in all_trains if t.train_number == train_info['train_number'] and t.dep_time == train_info['dep_time']), None)
             
@@ -100,7 +95,7 @@ def reserve():
                 raise Exception("KTX 로그인 정보가 서버에 설정되지 않았습니다.")
 
             client = ktx.Korail(ktx_id, ktx_pw)
-            all_trains = client.search_train(dep=train_info['dep_name'], arr=train_info['arr_name'], date=train_info['dep_date'], time="000000", include_no_seats=True, train_type=ktx.TrainType.KTX)
+            all_trains = client.search_train(dep=train_info['dep_name'], arr=train_info['arr_name'], date=train_info['dep_date'], time="000000", train_type=ktx.TrainType.KTX)
             
             target_train = next((t for t in all_trains if t.train_no == train_info['train_no'] and t.dep_time == train_info['dep_time']), None)
 
@@ -190,3 +185,4 @@ def cancel_reservation():
     except Exception as e:
         print(f"Error in /api/cancel: {e}", file=sys.stderr)
         return jsonify({"error": str(e)}), 500
+
