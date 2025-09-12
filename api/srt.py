@@ -483,17 +483,20 @@ class SRTTrain(Train):
         msg += f" ({duration:>3d}분)"
         return msg
 
+    @property
     def general_seat_available(self):
         return "예약가능" in self.general_seat_state
 
+    @property
     def special_seat_available(self):
         return "예약가능" in self.special_seat_state
 
     def reserve_standby_available(self):
         return self.reserve_wait_possible_code == 9
 
+    @property
     def seat_available(self):
-        return self.general_seat_available() or self.special_seat_available()
+        return self.general_seat_available or self.special_seat_available
 
 
 # NetFunnel
@@ -833,7 +836,7 @@ class SRT:
                 for t in parser.get_all()["outDataSets"]["dsOutput1"]
                 if t["stlbTrnClsfCd"] == "17"
             )
-            if (not available_only or train.seat_available())
+            if (not available_only or train.seat_available)
             and (not time_limit or train.dep_time <= time_limit)
         ]
 
@@ -859,7 +862,7 @@ class SRT:
             >>> trains = srt.search_train("수서", "부산", "210101", "000000")
             >>> srt.reserve(trains[0])
         """
-        if not train.seat_available() and train.reserve_wait_possible_code >= 0:
+        if not train.seat_available and train.reserve_wait_possible_code >= 0:
             reservation = self.reserve_standby(
                 train, passengers, option=option, mblPhone=self.phone_number
             )
@@ -955,8 +958,8 @@ class SRT:
         is_special_seat = {
             SeatType.GENERAL_ONLY: False,
             SeatType.SPECIAL_ONLY: True,
-            SeatType.GENERAL_FIRST: not train.general_seat_available(),
-            SeatType.SPECIAL_FIRST: train.special_seat_available(),
+            SeatType.GENERAL_FIRST: not train.general_seat_available,
+            SeatType.SPECIAL_FIRST: train.special_seat_available,
         }[option]
 
         data = {

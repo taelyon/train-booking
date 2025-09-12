@@ -10,7 +10,7 @@ import ktx
 from dotenv import load_dotenv
 
 from srt import SRTResponseError, SRTLoginError, SRTError
-from ktx import SoldOutError, KorailError, TrainType
+from ktx import SoldOutError, KorailError, TrainType, NoResultsError
 
 load_dotenv()
 app = Flask(__name__)
@@ -19,22 +19,31 @@ app = Flask(__name__)
 def add_to_dict_method(cls):
     def to_dict(self):
         d = {}
-        # Add attributes from all parent classes as well
+
+        # 🔽 값을 JSON으로 변환하는 로직을 별도 함수로 분리하여 재사용성을 높였습니다. 🔽
+        def serialize_value(value):
+            if isinstance(value, Enum):
+                return value.value
+            if hasattr(value, 'to_dict'): # 객체일 경우 to_dict() 재귀 호출
+                return value.to_dict()
+            if isinstance(value, list): # 리스트일 경우 각 항목을 재귀적으로 변환
+                return [serialize_value(item) for item in value]
+            return value
+
+        # 클래스의 속성(property)들을 처리합니다.
         for base_class in reversed(cls.__mro__):
             for attr, value in base_class.__dict__.items():
                 if isinstance(value, property):
-                     d[attr] = getattr(self, attr)
+                    prop_value = getattr(self, attr)
+                    d[attr] = serialize_value(prop_value) # 헬퍼 함수 사용
 
+        # 인스턴스 변수들을 처리합니다.
         for attr, value in self.__dict__.items():
+            # _로 시작하는 내부 변수는 제외하고, 호출 가능하지 않은(메서드가 아닌) 변수만 처리
             if not attr.startswith('_') and not callable(value):
-                if isinstance(value, Enum):
-                    d[attr] = value.value
-                elif hasattr(value, 'to_dict'): # For nested objects
-                    d[attr] = value.to_dict()
-                else:
-                    d[attr] = value
+                d[attr] = serialize_value(value) # 헬퍼 함수 사용
 
-        # Use __repr__ as a fallback for a descriptive string
+        # 대표 문자열이 있으면 추가합니다.
         if hasattr(self, '__repr__') and callable(self.__repr__):
              d['dump'] = self.__repr__()
         return d
@@ -44,11 +53,12 @@ def add_to_dict_method(cls):
 # Add .to_dict() to necessary classes from libraries
 add_to_dict_method(srt.SRTTrain)
 add_to_dict_method(srt.SRTReservation)
+add_to_dict_method(srt.SRTTicket)
 add_to_dict_method(ktx.Schedule)
 add_to_dict_method(ktx.Train)
 add_to_dict_method(ktx.Reservation)
 add_to_dict_method(ktx.Ticket)
-
+add_to_dict_method(ktx.Seat)
 
 # --- API Routes ---
 
@@ -59,6 +69,17 @@ def search():
     arr_station = request.args.get('arr')
     date_str = request.args.get('date').replace('-', '')
     time_str = request.args.get('time').replace(':', '') + '00'
+
+    # 프론트엔드로 보낼 기본 데이터 구조
+    response_data = {
+        'trains': [],
+        'dep': dep_station,
+        'arr': arr_station,
+        'date': request.args.get('date'),
+        'time': request.args.get('time'),
+        'train_type': train_type,
+        'adults': request.args.get('adults')
+    }
 
     try:
         trains = []
@@ -75,18 +96,17 @@ def search():
                 train_type=ktx.TrainType.KTX
             )
         
-        trains_list = [train.to_dict() for train in trains]
-        return jsonify({
-            'trains': trains_list,
-            'dep': dep_station,
-            'arr': arr_station,
-            'date': request.args.get('date'),
-            'time': request.args.get('time'),
-            'train_type': train_type,
-            'adults': request.args.get('adults')
-        })
+        response_data['trains'] = [train.to_dict() for train in trains]
+        return jsonify(response_data)
 
+    except (SRTResponseError, NoResultsError) as e:
+        # SRT, KTX 조회 결과가 없을 때 발생하는 오류를 여기서 처리합니다.
+        # 오류 대신, 비어있는 trains 리스트를 포함한 정상 응답(200)을 보냅니다.
+        app.logger.info(f"No train results: {e}") # 서버 로그에는 정보로 남김
+        return jsonify(response_data)
     except Exception as e:
+        # 그 외 예상치 못한 다른 모든 오류는 500 오류로 처리합니다.
+        app.logger.error(f"An unexpected error occurred: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/reserve', methods=['POST'])
@@ -96,8 +116,13 @@ def reserve():
         train_type = form_data.get('type')
         dep_station = form_data.get('dep')
         arr_station = form_data.get('arr')
-        date_str = form_data.get('date').replace('-', '')
-        time_str = form_data.get('time').replace(':', '') + '00'
+        date_val = form_data.get('date')
+        time_val = form_data.get('time')
+        if not date_val or not time_val:
+            return jsonify({'error_message': '예약 요청에 날짜 또는 시간 정보가 누락되었습니다.'}), 400
+
+        date_str = date_val.replace('-', '')
+        time_str = time_val.replace(':', '') + '00'
         train_number = form_data.get('train_number')
         adults = int(form_data.get('adults', 1))
         seat_type = form_data.get('seat_type')
@@ -136,7 +161,12 @@ def auto_retry():
     try:
         train_type = form_data.get('type')
         dep, arr = form_data.get('dep'), form_data.get('arr')
-        date, time = form_data.get('date').replace('-', ''), form_data.get('time').replace(':', '') + '00'
+        date_val = form_data.get('date')
+        time_val = form_data.get('time')
+        if not date_val or not time_val:
+            return jsonify({'error_message': '자동 재시도를 위한 날짜 또는 시간 정보가 없습니다.'}), 400
+        
+        date, time = date_val.replace('-', ''), time_val.replace(':', '') + '00'
         train_number = form_data.get('train_number')
         adults = int(form_data.get('adults', 1))
         seat_type = form_data.get('seat_type', 'GENERAL')
@@ -184,12 +214,21 @@ def reservations():
 def cancel():
     try:
         data = request.form
-        train_type, pnr_no = data.get('train_type'), data.get('pnr_no')
-        
+        train_type = data.get('train_type')
+        pnr_no = data.get('pnr_no')
+
+        # 🔽 train_type 값이 유효한지 먼저 확인합니다. 🔽
+        if not train_type or not pnr_no:
+            return jsonify({'error_message': "취소 요청에 필요한 정보가 누락되었습니다."}), 400
+
         if train_type == 'SRT':
             client = srt.SRT(os.environ.get('SRT_ID'), os.environ.get('SRT_PW'))
-            target = next((r for r in client.get_reservations() if r.reservation_number == pnr_no), None)
-            if not target: return jsonify({'error_message': "취소할 SRT 예매 내역을 찾을 수 없습니다."}), 404
+            reservations = client.get_reservations()
+            target = next((r for r in reservations if r.reservation_number == pnr_no), None)
+            
+            if not target:
+                return jsonify({'error_message': "취소할 SRT 예매 내역을 찾을 수 없습니다."}), 404
+            
             client.cancel(target)
             return jsonify({'message': f"SRT 예매({pnr_no})가 정상적으로 취소되었습니다."})
 
@@ -197,10 +236,22 @@ def cancel():
             client = ktx.Korail(os.environ.get('KTX_ID'), os.environ.get('KTX_PW'))
             is_ticket = data.get('is_ticket') == 'True'
             reservations = client.tickets() + client.reservations()
-            target = next((r for r in reservations if (r.pnr_no if hasattr(r, 'pnr_no') else r.rsv_id) == pnr_no), None)
-            if not target: return jsonify({'error_message': "취소할 KTX 예매 내역을 찾을 수 없습니다."}), 404
-            if is_ticket: client.refund(target)
-            else: client.cancel(target)
-            return jsonify({'message': f"KTX 예매({pnr_no})가 정상적으로 취소(환불)되었습니다."})
+            target = next((r for r in reservations if (hasattr(r, 'pnr_no') and r.pnr_no == pnr_no) or (hasattr(r, 'rsv_id') and r.rsv_id == pnr_no)), None)
             
-    except Exception as e: return jsonify({'error_message': str(e)}), 500
+            if not target:
+                return jsonify({'error_message': "취소할 KTX 예매 내역을 찾을 수 없습니다."}), 404
+            
+            if is_ticket:
+                client.refund(target)
+            else:
+                client.cancel(target)
+            
+            return jsonify({'message': f"KTX 예매({pnr_no})가 정상적으로 취소(환불)되었습니다."})
+        
+        # 🔽 'SRT'나 'KTX'가 아닐 경우, 잘못된 요청으로 처리합니다. 🔽
+        else:
+            return jsonify({'error_message': f"알 수 없는 열차 종류({train_type})입니다."}), 400
+            
+    except Exception as e:
+        app.logger.error(f"An unexpected error occurred during cancellation: {e}", exc_info=True)
+        return jsonify({'error_message': str(e)}), 500

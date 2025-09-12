@@ -26,7 +26,38 @@ export default function App() {
     const [autoRetryData, setAutoRetryData] = useState(null);
     const [reservations, setReservations] = useState({ srt: [], ktx: [] });
     const [reservationResult, setReservationResult] = useState(null);
+    const [favorites, setFavorites] = useState([]);
+
+    useEffect(() => {
+        try {
+            const savedFavorites = JSON.parse(localStorage.getItem('trainFavorites') || '[]');
+            setFavorites(savedFavorites);
+        } catch (e) {
+            console.error("Failed to parse favorites from localStorage", e);
+            setFavorites([]);
+        }
+    }, []);
     
+    // 🔽 즐겨찾기 로직을 'type' 포함하도록 수정 🔽
+    const updateFavorites = (newFavorites) => {
+        const uniqueFavorites = Array.from(new Set(newFavorites.map(fav => JSON.stringify(fav)))).map(favStr => JSON.parse(favStr));
+        localStorage.setItem('trainFavorites', JSON.stringify(uniqueFavorites));
+        setFavorites(uniqueFavorites);
+    };
+
+    const addFavorite = (favorite) => {
+        if (favorites.some(fav => fav.type === favorite.type && fav.dep === favorite.dep && fav.arr === favorite.arr)) {
+            alert('이미 등록된 즐겨찾기 구간입니다.');
+            return;
+        }
+        updateFavorites([...favorites, favorite]);
+    };
+
+    const removeFavorite = (favoriteToRemove) => {
+        const newFavorites = favorites.filter(fav => fav.type !== favoriteToRemove.type || fav.dep !== favoriteToRemove.dep || fav.arr !== favoriteToRemove.arr);
+        updateFavorites(newFavorites);
+    };
+
     useEffect(() => {
         let timer;
         if (autoRetryData) {
@@ -67,6 +98,13 @@ export default function App() {
         setError('');
         setAutoRetryData(null);
         
+        if (!searchParams) {
+            setError('검색 정보가 유효하지 않습니다. 다시 검색해주세요.');
+            setIsLoading(false);
+            setView('search');
+            return;
+        }
+
         const body = {
             ...searchParams,
             train_number: train.train_number || train.train_no,
@@ -117,19 +155,34 @@ export default function App() {
     };
 
     const handleCancel = async (pnr_no, train_type, is_ticket) => {
+        // 🔽 요청을 보내기 전, 필수 정보가 있는지 먼저 확인하는 코드를 추가했습니다. 🔽
+        if (!pnr_no || !train_type) {
+            alert('오류: 취소에 필요한 예약번호 또는 열차 종류 정보가 없습니다. 페이지를 새로고침 후 다시 시도해주세요.');
+            setIsLoading(false);
+            return;
+        }
+
         if (!window.confirm('정말로 이 예매를 취소하시겠습니까?')) return;
         setIsLoading(true);
         try {
-            const body = { pnr_no, train_type, is_ticket };
+            // 🔽 데이터를 더 명시적이고 안정적인 방식으로 구성하도록 수정했습니다. 🔽
+            const body = new URLSearchParams();
+            body.append('pnr_no', pnr_no);
+            body.append('train_type', train_type);
+            // is_ticket 값은 true/false 또는 undefined일 수 있으므로, 문자열로 변환하여 전달합니다.
+            body.append('is_ticket', String(is_ticket === true));
+
             const response = await fetch('/api/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams(body),
+                body: body,
             });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error_message || '취소 중 오류 발생');
             
             setReservationResult({ success: true, message: result.message });
+            // 취소 성공 후, 예매 내역을 다시 불러와 화면을 갱신합니다.
+            await fetchReservations(); 
             setView('resultMessage');
         } catch(err) {
             setReservationResult({ success: false, message: err.message });
@@ -145,7 +198,14 @@ export default function App() {
             case 'results': return <ResultsView data={searchResults} onReserve={handleReserve} onBack={() => setView('search')} isLoading={isLoading} />;
             case 'reservations': return <ReservationsView reservations={reservations} onBack={() => setView('search')} onCancel={handleCancel} isLoading={isLoading} />;
             case 'resultMessage': return <ResultMessage result={reservationResult} onBack={() => setView('search')} />;
-            default: return <SearchForm onSubmit={handleSearch} onShowReservations={fetchReservations} isLoading={isLoading} />;
+            default: return <SearchForm 
+                onSubmit={handleSearch} 
+                onShowReservations={fetchReservations} 
+                isLoading={isLoading}
+                favorites={favorites}
+                onAddFavorite={addFavorite}
+                onRemoveFavorite={removeFavorite}
+            />;
         }
     };
 
@@ -163,8 +223,44 @@ export default function App() {
 
 // --- Sub-components ---
 
-function SearchForm({ onSubmit, onShowReservations, isLoading }) {
+// 🔽 SearchForm 컴포넌트 전체 수정 🔽
+
+function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddFavorite, onRemoveFavorite }) {
     const [trainType, setTrainType] = useState('SRT');
+    const [depStation, setDepStation] = useState('수서');
+    const [arrStation, setArrStation] = useState('부산');
+    
+    useEffect(() => {
+        const defaultStations = STATIONS[trainType];
+        if (trainType === 'SRT') {
+            setDepStation(defaultStations.includes('수서') ? '수서' : defaultStations[0]);
+            setArrStation(defaultStations.includes('부산') ? '부산' : defaultStations[1]);
+        } else { // KTX
+            setDepStation(defaultStations.includes('서울') ? '서울' : defaultStations[0]);
+            setArrStation(defaultStations.includes('부산') ? '부산' : defaultStations[1]);
+        }
+    }, [trainType]);
+
+    const handleAddFavorite = () => {
+        if (!depStation || !arrStation) {
+            alert('출발역과 도착역을 모두 선택해주세요.');
+            return;
+        }
+        onAddFavorite({ type: trainType, dep: depStation, arr: arrStation });
+    };
+
+    const applyFavorite = (fav) => {
+        setTrainType(fav.type);
+        setDepStation(fav.dep);
+        setArrStation(fav.arr);
+    };
+
+    const handleSwapStations = () => {
+        const temp = depStation;
+        setDepStation(arrStation);
+        setArrStation(temp);
+    };
+
     const today = new Date().toISOString().split('T')[0];
     const now = new Date().toTimeString().substring(0, 5);
 
@@ -172,9 +268,46 @@ function SearchForm({ onSubmit, onShowReservations, isLoading }) {
         <>
             <h1 className="text-3xl font-bold text-center text-blue-900 mb-2">기차 조회 🚆</h1>
             <div className="text-center mb-6"><button onClick={onShowReservations} className="bg-blue-100 text-blue-800 font-semibold py-2 px-4 border border-blue-300 rounded-lg hover:bg-blue-200 transition">🎫 예매 확인 / 취소</button></div>
+            
+            {favorites.length > 0 && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
+                    <h3 className="font-bold text-gray-700 mb-2">⭐ 즐겨찾는 구간</h3>
+                    <ul className="space-y-2">
+                        {favorites.map((fav, index) => (
+                            <li key={index} className="flex justify-between items-center bg-white p-2 rounded shadow-sm">
+                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:text-blue-700 transition">
+                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
+                                    <span className="font-semibold">{fav.dep} → {fav.arr}</span>
+                                </button>
+                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 transition">X</button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            
             <form onSubmit={onSubmit}>
                 <div className="mb-4"><div className="flex bg-gray-200 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-800 shadow' : 'text-gray-600'}`}>{type}</span></label>))}</div></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><StationSelect key={trainType + '-dep'} label="출발역" name="dep" stations={STATIONS[trainType]} defaultValue={trainType === 'SRT' ? '수서' : '서울'}/><StationSelect key={trainType + '-arr'} label="도착역" name="arr" stations={STATIONS[trainType]} defaultValue="부산"/></div>
+                
+                <div className="flex items-center gap-2 mb-4">
+                    <div className="flex-1">
+                        <StationSelect key={`${trainType}-dep`} label="출발역" name="dep" stations={STATIONS[trainType]} value={depStation} onChange={e => setDepStation(e.target.value)} />
+                    </div>
+                    <div className="mt-7">
+                        {/* 🔽 SVG 아이콘을 텍스트로 교체했습니다. 🔽 */}
+                        <button type="button" onClick={handleSwapStations} className="p-2 w-10 h-10 flex items-center justify-center border rounded-full bg-gray-100 hover:bg-gray-200 transition text-xl font-bold text-gray-600">
+                            ↔
+                        </button>
+                    </div>
+                    <div className="flex-1">
+                        <StationSelect key={`${trainType}-arr`} label="도착역" name="arr" stations={STATIONS[trainType]} value={arrStation} onChange={e => setArrStation(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="mb-4">
+                    <button type="button" onClick={handleAddFavorite} className="w-full bg-yellow-400 text-yellow-900 font-semibold py-2 px-4 rounded-lg hover:bg-yellow-500 transition">★ 현재 구간 즐겨찾기 추가</button>
+                </div>
+                
                 <div className="mb-4"><label className="block text-gray-700 text-sm font-bold mb-2">출발일 / 시각</label><div className="grid grid-cols-2 gap-4"><input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /><input type="time" name="time" defaultValue={now} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div></div>
                 <div className="mb-6"><label htmlFor="adults" className="block text-gray-700 text-sm font-bold mb-2">성인 승객수</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}명</option>)}</select></div>
                 <button type="submit" disabled={isLoading} className="w-full bg-blue-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-gray-400">{isLoading ? '조회 중...' : '조회하기'}</button>
@@ -183,9 +316,15 @@ function SearchForm({ onSubmit, onShowReservations, isLoading }) {
     );
 }
 
-function StationSelect({ label, name, stations, defaultValue }) {
+
+function StationSelect({ label, name, stations, value, onChange }) {
     return (
-        <div><label htmlFor={name} className="block text-gray-700 text-sm font-bold mb-2">{label}</label><select name={name} id={name} required defaultValue={defaultValue} className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{stations.map(station => <option key={station} value={station}>{station}</option>)}</select></div>
+        <div>
+            <label htmlFor={name} className="block text-gray-700 text-sm font-bold mb-2">{label}</label>
+            <select name={name} id={name} required value={value} onChange={onChange} className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {stations.map(station => <option key={station} value={station}>{station}</option>)}
+            </select>
+        </div>
     );
 }
 
@@ -279,4 +418,3 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
-

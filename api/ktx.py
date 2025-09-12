@@ -91,7 +91,6 @@ class Schedule:
             f"{self.dep_name}~{self.arr_name}"
         )
 
-
 class Train(Schedule):
     """Train schedule with seat availability"""
 
@@ -119,21 +118,25 @@ class Train(Schedule):
             duration += 24 * 60
 
         if self.reserve_possible_name:
-            repr_str += f"  특실 {'가능' if self.has_special_seat() else '매진'}"
-            repr_str += f", 일반실 {'가능' if self.has_general_seat() else '매진'}"
+            # 괄호 없이 속성(property)으로 호출하도록 수정된 부분입니다.
+            repr_str += f"  특실 {'가능' if self.has_special_seat else '매진'}"
+            repr_str += f", 일반실 {'가능' if self.has_general_seat else '매진'}"
             if self.wait_reserve_flag >= 0:
                 repr_str += f", 예약대기 {'가능' if self.has_general_waiting_list() else '매진'}"
         repr_str += f" ({duration:>3d}분)"
         return repr_str
 
+    @property
     def has_special_seat(self):
         return self.special_seat == "11"
 
+    @property
     def has_general_seat(self):
         return self.general_seat == "11"
 
+    @property
     def has_seat(self):
-        return self.has_general_seat() or self.has_special_seat()
+        return self.has_general_seat or self.has_special_seat
 
     def has_waiting_list(self):
         return self.has_general_waiting_list()
@@ -681,10 +684,10 @@ class Korail:
             trains = [
                 Train(info) for info in j.get("trn_infos", {}).get("trn_info", [])
             ]
-            filter_fns = [lambda x: x.has_seat()]
+            filter_fns = [lambda x: x.has_seat]
 
             if include_no_seats:
-                filter_fns.append(lambda x: not x.has_seat())
+                filter_fns.append(lambda x: not x.has_seat)
             if include_waiting_list:
                 filter_fns.append(lambda x: x.has_waiting_list())
 
@@ -696,13 +699,13 @@ class Korail:
             return trains
 
     def reserve(self, train, passengers=None, option=ReserveOption.GENERAL_FIRST):
-        reserving_seat = train.has_seat() or train.wait_reserve_flag < 0
+        reserving_seat = train.has_seat or train.wait_reserve_flag < 0
         if reserving_seat:
             is_special_seat = {
                 ReserveOption.GENERAL_ONLY: False,
                 ReserveOption.SPECIAL_ONLY: True,
-                ReserveOption.GENERAL_FIRST: not train.has_general_seat(),
-                ReserveOption.SPECIAL_FIRST: train.has_special_seat(),
+                ReserveOption.GENERAL_FIRST: not train.has_general_seat,
+                ReserveOption.SPECIAL_FIRST: train.has_special_seat,
             }[option]
         else:
             is_special_seat = {
