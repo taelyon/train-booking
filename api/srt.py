@@ -290,7 +290,10 @@ class SRTTicket:
 
     __repr__ = __str__
 
-    def dump(self) -> str:
+    def dump(self, format="string"):
+        if format == "json":
+            return vars(self)
+            
         if self.is_waiting:
             return (
                 f"예약대기 ({self.seat_type}) {self.passenger_type}"
@@ -334,7 +337,14 @@ class SRTReservation:
 
     __repr__ = __str__
 
-    def dump(self):
+    def dump(self, format="string"):
+        if format == "json":
+            # Make a copy to avoid modifying the original object
+            data = self.__dict__.copy()
+            # Convert ticket objects to dictionaries
+            data['_tickets'] = [ticket.dump(format="json") for ticket in self._tickets]
+            return data
+
         base = (
             f"[{self.train_name}] "
             f"{self.dep_date[4:6]}월 {self.dep_date[6:8]}일, "
@@ -458,7 +468,10 @@ class SRTTrain(Train):
     def __repr__(self):
         return self.dump()
 
-    def dump(self):
+    def dump(self, format="string"):
+        if format == "json":
+            return vars(self)
+
         dep_hour, dep_min = self.dep_time[0:2], self.dep_time[2:4]
         arr_hour, arr_min = self.arr_time[0:2], self.arr_time[2:4]
 
@@ -1259,4 +1272,3 @@ class SRT:
     def clear(self):
         self._log("Clearing the netfunnel key")
         self._netfunnel.clear()
-
