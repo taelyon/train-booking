@@ -1,6 +1,10 @@
+import sys
 import os
 from flask import Flask, request, jsonify
 from enum import Enum
+from pathlib import Path
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 import srt
 import ktx
 from dotenv import load_dotenv
