@@ -17,3 +17,5 @@ requests
 urllib3
 Werkzeug
 pytz
+srt
+ktx
