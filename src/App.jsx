@@ -277,25 +277,8 @@ function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddF
 
     return (
         <>
-            <h1 className="text-3xl font-bold text-center text-blue-900 mb-2">기차 조회 🚆</h1>
+            <h1 className="text-3xl font-bold text-center text-blue-900 mb-2">기차 예매 🚆</h1>
             <div className="text-center mb-6"><button onClick={onShowReservations} className="bg-blue-100 text-blue-800 font-semibold py-2 px-4 border border-blue-300 rounded-lg hover:bg-blue-200 transition">🎫 예매 확인 / 취소</button></div>
-            
-            {favorites.length > 0 && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-                    <h3 className="font-bold text-gray-700 mb-2">⭐ 즐겨찾는 구간</h3>
-                    <ul className="space-y-2">
-                        {favorites.map((fav, index) => (
-                            <li key={index} className="flex justify-between items-center bg-white p-2 rounded shadow-sm">
-                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:text-blue-700 transition">
-                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
-                                    <span className="font-semibold">{fav.dep} → {fav.arr}</span>
-                                </button>
-                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 transition">X</button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
             
             <form onSubmit={onSubmit}>
                 <div className="mb-4"><div className="flex bg-gray-200 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-800 shadow' : 'text-gray-600'}`}>{type}</span></label>))}</div></div>
@@ -330,6 +313,22 @@ function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddF
                 </div>
                 <button type="submit" disabled={isLoading} className="w-full bg-blue-800 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-gray-400">{isLoading ? '조회 중...' : '조회하기'}</button>
             </form>
+             {favorites.length > 0 && (
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg border">
+                    <h3 className="font-bold text-gray-700 mb-2">⭐ 즐겨찾는 구간</h3>
+                    <ul className="space-y-2">
+                        {favorites.map((fav, index) => (
+                            <li key={index} className="flex justify-between items-center bg-white p-2 rounded shadow-sm">
+                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:text-blue-700 transition">
+                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
+                                    <span className="font-semibold">{fav.dep} → {fav.arr}</span>
+                                </button>
+                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 transition">X</button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
         </>
     );
 }
@@ -376,13 +375,34 @@ function TrainCard({ train, trainType, onReserve, isLoading }) {
     const isSelectedSeatAvailable = 
         (selectedSeat === 'GENERAL' && isGeneralAvailable) || 
         (selectedSeat === 'SPECIAL' && isSpecialAvailable);
+        
+    const calculateDuration = (depTime, arrTime) => {
+        const depHour = parseInt(depTime.substring(0, 2), 10);
+        const depMinute = parseInt(depTime.substring(2, 4), 10);
+        const arrHour = parseInt(arrTime.substring(0, 2), 10);
+        const arrMinute = parseInt(arrTime.substring(2, 4), 10);
+
+        let diff = (arrHour * 60 + arrMinute) - (depHour * 60 + depMinute);
+        if (diff < 0) diff += 24 * 60; // 다음날 도착하는 경우
+
+        const hours = Math.floor(diff / 60);
+        const minutes = diff % 60;
+
+        return `${hours > 0 ? `${hours}시간` : ''} ${minutes}분`;
+    };
+    
+    const duration = calculateDuration(depTime, arrTime);
+
 
     return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-md p-4">
             <div className="font-bold text-gray-800 mb-3">{train.train_name || train.train_type_name} {train.train_number || train.train_no}</div>
             <div className="flex justify-between items-center mb-4">
                 <div className="text-center"><div className="text-xl font-bold">{depTime.substring(0,2)}:{depTime.substring(2,4)}</div><div className="text-sm text-gray-600">{train.dep_station_name || train.dep_name}</div></div>
-                <div className="text-2xl text-blue-800">→</div>
+                <div className="text-center">
+                    <div className="text-gray-500 text-sm">{duration}</div>
+                    <div className="text-2xl text-blue-800">→</div>
+                </div>
                 <div className="text-center"><div className="text-xl font-bold">{arrTime.substring(0,2)}:{arrTime.substring(2,4)}</div><div className="text-sm text-gray-600">{train.arr_station_name || train.arr_name}</div></div>
             </div>
             <div className="border-t pt-3">
