@@ -387,10 +387,20 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
         setArrStation(depStation);
     };
 
-    const today = new Date().toISOString().split('T')[0];
     const now = new Date();
-    now.setMinutes(now.getMinutes() + 5);
-    const currentTime = now.toTimeString().substring(0, 5);
+    // KST는 UTC+9. 현재 UTC 시간에 9시간을 더해 한국 시간을 구합니다.
+    const kstTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+
+    // KST 기준 날짜를 YYYY-MM-DD 형식으로 가져옵니다.
+    const today = kstTime.toISOString().slice(0, 10);
+
+    // 출발 시간 기본값으로 5분을 더합니다.
+    const kstNowWithBuffer = new Date(kstTime.getTime() + 5 * 60 * 1000);
+
+    // KST 기준 시간에서 시와 분을 추출합니다.
+    const hours = kstNowWithBuffer.getUTCHours().toString().padStart(2, '0');
+    const minutes = kstNowWithBuffer.getUTCMinutes().toString().padStart(2, '0');
+    const currentTime = `${hours}:${minutes}`;
 
     return (
         <div className="space-y-6">
