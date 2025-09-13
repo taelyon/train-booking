@@ -243,17 +243,17 @@ function SearchAndBookingFlow() {
                 setAutoRetryData(null);
                 playSuccessSound();
                 setReservationResult({ success: true, data: result.reservation });
+                setView('results'); // Prevent crash
+                setIsLoading(false);
             } else {
                  setAutoRetryData(null);
                  setReservationResult({ success: false, message: result.error_message || '알 수 없는 오류가 발생했습니다.' });
+                 setIsLoading(false);
             }
         } catch (err) {
             setAutoRetryData(null);
             setReservationResult({ success: false, message: err.message });
-        } finally {
-            if (!autoRetryData) {
-               setIsLoading(false);
-            }
+            setIsLoading(false);
         }
     };
     
@@ -819,4 +819,3 @@ function EmptyResults({ searchParams, onBack }) {
         </div>
     );
 }
-
