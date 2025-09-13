@@ -340,7 +340,7 @@ function ReservationsScreen() {
 
     return (
         <div className="space-y-6">
-             <h1 className="text-3xl font-bold text-slate-800">예매 내역</h1>
+             <h1 className="text-3xl font-bold text-slate-800 text-center">예매 내역</h1>
              {error && <div className="bg-red-100 text-red-700 p-3 rounded-lg">{error}</div>}
              {message && <div className="bg-green-100 text-green-700 p-3 rounded-lg">{message}</div>}
              {isLoading ? <div className="text-center p-8"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div> :
