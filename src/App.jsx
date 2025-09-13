@@ -364,8 +364,14 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                 </div>
                 
                 <div className="flex gap-2">
-                    <div className="flex-1 min-w-0"><label className="block text-slate-700 text-sm font-bold mb-2">출발일</label><input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
-                    <div className="flex-1 min-w-0"><label className="block text-slate-700 text-sm font-bold mb-2">시각</label><input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                    <div className="flex-1 min-w-0">
+                        <label className="block text-slate-700 text-sm font-bold mb-2">출발일</label>
+                        <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <label className="block text-slate-700 text-sm font-bold mb-2">시각</label>
+                        <input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
                 </div>
                 <div>
                     <label htmlFor="adults" className="block text-slate-700 text-sm font-bold mb-2">성인 승객</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[...Array(5).keys()].map(n => <option key={n+1} value={n+1}>{n+1}명</option>)}</select>
@@ -548,6 +554,8 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
+
+
 
 
 
