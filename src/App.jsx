@@ -326,6 +326,24 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
     return (
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-slate-800">어디로 떠나시나요? 🚆</h1>
+            
+            {favorites.length > 0 && (
+                <div>
+                    <h3 className="font-bold text-slate-700 mb-2">⭐ 즐겨찾는 구간</h3>
+                    <ul className="space-y-2">
+                        {favorites.map((fav, index) => (
+                            <li key={index} className="flex justify-between items-center bg-slate-100 p-2 rounded-lg">
+                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:opacity-80 transition">
+                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
+                                    <span className="font-semibold text-slate-800">{fav.dep} → {fav.arr}</span>
+                                </button>
+                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 text-lg transition">×</button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
             <form onSubmit={onSubmit} className="space-y-4">
                 <div className="flex bg-slate-100 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-600 shadow' : 'text-slate-600'}`}>{type}</span></label>))}</div>
                 
@@ -346,31 +364,14 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                 </div>
                 
                 <div className="flex gap-2">
-                    <div className="w-1/2"><label className="block text-slate-700 text-sm font-bold mb-2">출발일</label><input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
-                    <div className="w-1/2"><label className="block text-slate-700 text-sm font-bold mb-2">시각</label><input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                    <div className="flex-1"><label className="block text-slate-700 text-sm font-bold mb-2">출발일</label><input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                    <div className="flex-1"><label className="block text-slate-700 text-sm font-bold mb-2">시각</label><input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
                 </div>
                 <div>
                     <label htmlFor="adults" className="block text-slate-700 text-sm font-bold mb-2">성인 승객</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[...Array(5).keys()].map(n => <option key={n+1} value={n+1}>{n+1}명</option>)}</select>
                 </div>
                 <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-slate-400 flex justify-center items-center">{isLoading ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : '열차 조회하기'}</button>
             </form>
-            
-            {favorites.length > 0 && (
-                <div className="mt-6 pt-4 border-t">
-                    <h3 className="font-bold text-slate-700 mb-2">⭐ 즐겨찾는 구간</h3>
-                    <ul className="space-y-2">
-                        {favorites.map((fav, index) => (
-                            <li key={index} className="flex justify-between items-center bg-slate-100 p-2 rounded-lg">
-                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:opacity-80 transition">
-                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
-                                    <span className="font-semibold text-slate-800">{fav.dep} → {fav.arr}</span>
-                                </button>
-                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 text-lg transition">×</button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
         </div>
     );
 }
@@ -547,4 +548,6 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
+
+
 
