@@ -396,12 +396,12 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                          <button type="button" onClick={handleAddFavorite} className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
+                    <div className="flex gap-4">
+                        <div className="flex-1 min-w-0">
                             <label className="block text-slate-700 text-sm font-bold mb-1">출발일</label>
                             <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
-                         <div>
+                         <div className="flex-1 min-w-0">
                             <label className="block text-slate-700 text-sm font-bold mb-1">출발시각</label>
                             <input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
@@ -439,7 +439,7 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
 
 function StationSelect({ label, name, stations, value, onChange }) {
     return (
-        <div className="text-center w-full">
+        <div className="text-center flex-1">
             <label htmlFor={name} className="text-xs text-slate-500 font-semibold">{label}</label>
             <select 
                 name={name} 
@@ -747,4 +747,5 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
+
 
