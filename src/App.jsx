@@ -786,7 +786,7 @@ function AutoRetryView({ train, searchParams, onCancel }) {
             <h1 className="text-2xl font-bold text-slate-800 mb-2">자동 예매 시도 중...</h1>
             <p className="text-slate-600 mb-6">선택한 열차의 취소표를 실시간으로 확인하고 있습니다.</p>
             <div className="bg-slate-50 p-4 rounded-lg shadow-inner border">
-                <p className="font-semibold text-slate-800">{train.dep_station_name || train.dep_name} → {train.arr_station_name || train.arr_name}</p>
+                <p className="font-semibold text-slate-800 text-lg">{train.dep_station_name || train.dep_name} → {train.arr_station_name || train.arr_name}</p>
                 <p className="text-slate-500 text-sm">{searchParams.date} {searchParams.time}</p>
                 <p className="mt-4 font-bold text-blue-600 text-lg">{countdown}초 후 다시 시도합니다.</p>
             </div>
