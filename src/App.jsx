@@ -457,7 +457,7 @@ function StationSelect({ label, name, stations, value, onChange }) {
                 onChange={onChange} 
                 className="w-full font-bold text-slate-800 text-lg bg-transparent focus:outline-none appearance-none text-center p-1"
             >
-                {stations.map(station => <option key={station} value={station}>{station}</option>)}
+                {stations.map(station => <option key={station} value={station} style={{ textAlign: 'center' }}>{station}</option>)}
             </select>
         </div>
     );
