@@ -375,81 +375,81 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-slate-800 flex items-center justify-center">
-                <span>어디로 떠나시나요?</span>
-                <TrainIcon className="w-9 h-9 ml-2 text-blue-600" />
-            </h1>
+            <div className="text-center">
+                <TrainIcon className="w-12 h-12 mx-auto text-blue-600 mb-2" />
+                <h1 className="text-3xl font-bold text-slate-800">어디로 떠나시나요?</h1>
+                <p className="text-slate-500 mt-1">기차표를 쉽고 빠르게 예매하세요.</p>
+            </div>
             
+            <div className="bg-white rounded-xl shadow-lg p-5">
+                <form onSubmit={onSubmit} className="space-y-4">
+                    <div className="flex bg-slate-100 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>{type}</span></label>))}</div>
+                    
+                    <div className="relative bg-slate-50 rounded-lg p-4">
+                        <div className="flex items-center gap-2">
+                            <StationSelect label="출발" name="dep" stations={STATIONS[trainType]} value={depStation} onChange={e => setDepStation(e.target.value)} />
+                            <button type="button" onClick={handleSwapStations} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
+                                <SwapIcon />
+                            </button>
+                            <StationSelect label="도착" name="arr" stations={STATIONS[trainType]} value={arrStation} onChange={e => setArrStation(e.target.value)} />
+                        </div>
+                         <button type="button" onClick={handleAddFavorite} className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-slate-700 text-sm font-bold mb-1">출발일</label>
+                            <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                         <div>
+                            <label className="block text-slate-700 text-sm font-bold mb-1">출발시각</label>
+                            <input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor="adults" className="block text-slate-700 text-sm font-bold mb-1">성인 승객</label>
+                        <select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[...Array(5).keys()].map(n => <option key={n+1} value={n+1}>{n+1}명</option>)}</select>
+                    </div>
+
+                    <button type="submit" disabled={isLoading} className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition duration-300 disabled:from-slate-400 disabled:to-slate-300 flex justify-center items-center text-lg">
+                        {isLoading ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : '열차 조회하기'}
+                    </button>
+                </form>
+            </div>
+
             {favorites.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h3 className="font-bold text-slate-700 mb-3">⭐ 즐겨찾는 구간</h3>
-                    <ul className="space-y-2">
+                <div className="mt-6">
+                    <h3 className="font-bold text-slate-700 mb-3 text-center">⭐ 즐겨찾는 구간</h3>
+                    <div className="flex flex-wrap justify-center gap-2">
                         {favorites.map((fav, index) => (
-                            <li key={index} className="flex justify-between items-center bg-white p-2 rounded-lg shadow-sm">
-                                <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:opacity-80 transition">
-                                    <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
-                                    <span className="font-semibold text-slate-800">{fav.dep} → {fav.arr}</span>
+                            <div key={index} className="relative group">
+                                <button type="button" onClick={() => applyFavorite(fav)} className="bg-white border border-slate-300 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition">
+                                    <span className={`font-bold ${fav.type === 'SRT' ? 'text-purple-600' : 'text-blue-600'}`}>{fav.type}</span> {fav.dep} → {fav.arr}
                                 </button>
-                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="text-red-500 hover:text-red-700 font-bold ml-4 px-2 text-lg transition">×</button>
-                            </li>
+                                 <button type="button" onClick={() => onRemoveFavorite(fav)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                            </div>
                         ))}
-                    </ul>
+                    </div>
                 </div>
             )}
-
-            <form onSubmit={onSubmit} className="space-y-4">
-                <div className="flex bg-slate-100 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-600 shadow' : 'text-slate-600'}`}>{type}</span></label>))}</div>
-                
-                <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                        <StationSelect key={`${trainType}-dep`} label="출발" name="dep" stations={STATIONS[trainType]} value={depStation} onChange={e => setDepStation(e.target.value)} />
-                    </div>
-                    <button type="button" onClick={handleSwapStations} className="p-2 mt-7 w-10 h-10 flex items-center justify-center border rounded-full bg-slate-100 hover:bg-slate-200 transition text-slate-600">
-                        <SwapIcon />
-                    </button>
-                    <div className="flex-1">
-                        <StationSelect key={`${trainType}-arr`} label="도착" name="arr" stations={STATIONS[trainType]} value={arrStation} onChange={e => setArrStation(e.target.value)} />
-                    </div>
-                </div>
-
-                <div>
-                    <button type="button" onClick={handleAddFavorite} className="w-full bg-amber-300 text-amber-900 font-semibold py-2.5 px-4 rounded-lg hover:bg-amber-400 transition text-sm">★ 현재 구간 즐겨찾기</button>
-                </div>
-                
-                <div>
-                    <label className="block text-slate-700 text-sm font-bold mb-2">출발일시</label>
-                    <div className="flex items-center border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden">
-                        <input 
-                            type="date" 
-                            name="date" 
-                            defaultValue={today} 
-                            required 
-                            className="flex-1 min-w-0 px-3 py-2 border-r border-slate-300 focus:outline-none" 
-                        />
-                        <input 
-                            type="time" 
-                            name="time" 
-                            defaultValue={currentTime} 
-                            required 
-                            className="flex-1 min-w-0 px-3 py-2 focus:outline-none" 
-                        />
-                    </div>
-                </div>
-                <div>
-                    <label htmlFor="adults" className="block text-slate-700 text-sm font-bold mb-2">성인 승객</label><select name="adults" id="adults" defaultValue="1" className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">{[...Array(5).keys()].map(n => <option key={n+1} value={n+1}>{n+1}명</option>)}</select>
-                </div>
-                <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-slate-400 flex justify-center items-center">{isLoading ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : '열차 조회하기'}</button>
-            </form>
         </div>
     );
 }
 
 function StationSelect({ label, name, stations, value, onChange }) {
     return (
-        <div>
-            <label htmlFor={name} className="block text-slate-700 text-sm font-bold mb-2">{label}</label>
-            <select name={name} id={name} required value={value} onChange={onChange} className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-no-repeat bg-right pr-8" style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundSize: '1.5em 1.5em' }}>
-              {stations.map(station => <option key={station} value={station}>{station}</option>)}
+        <div className="text-center w-full">
+            <label htmlFor={name} className="text-xs text-slate-500 font-semibold">{label}</label>
+            <select 
+                name={name} 
+                id={name} 
+                required 
+                value={value} 
+                onChange={onChange} 
+                className="w-full font-bold text-slate-800 text-lg bg-transparent focus:outline-none appearance-none text-center p-1"
+            >
+                {stations.map(station => <option key={station} value={station}>{station}</option>)}
             </select>
         </div>
     );
@@ -736,7 +736,7 @@ function AutoRetryView({ train, searchParams, onCancel }) {
     return (
         <div className="text-center p-4">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">자동 예매 시도 중...</h1>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">빈 자리 확인 중...</h1>
             <p className="text-slate-600 mb-6">선택한 열차의 취소표를 실시간으로 확인하고 있습니다.</p>
             <div className="bg-slate-50 p-4 rounded-lg shadow-inner border">
                 <p className="font-semibold text-slate-800">{train.dep_station_name || train.dep_name} → {train.arr_station_name || train.arr_name}</p>
@@ -747,3 +747,4 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
+
