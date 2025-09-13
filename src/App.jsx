@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { subscribeUserToPush } from './push-notification';
 
 // --- Icon Components ---
 const SearchIcon = ({ className }) => (
@@ -34,6 +35,14 @@ const TrainIcon = ({ className }) => (
         <path d="M5 17h14"></path>
         <path d="M17 5v-2"></path>
         <path d="M7 5v-2"></path>
+    </svg>
+);
+
+const AlertTriangleIcon = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
     </svg>
 );
 
@@ -124,6 +133,16 @@ function SearchAndBookingFlow() {
     const [autoRetryData, setAutoRetryData] = useState(null);
     const [reservationResult, setReservationResult] = useState(null); // Used for the popup
     const [favorites, setFavorites] = useState([]);
+
+    useEffect(() => {
+        // 브라우저가 서비스 워커와 알림 기능을 지원하는지 확인
+        if ('serviceWorker' in navigator && 'Notification' in window) {
+            // 사용자에게 아직 권한을 묻지 않은 상태('default')일 때만 요청
+            if (Notification.permission === 'default') {
+                subscribeUserToPush();
+            }
+        }
+    }, []); // 빈 배열[]은 이 코드가 맨 처음 한 번만 실행되게 함
 
     useEffect(() => {
         try {
@@ -475,7 +494,16 @@ function ResultsView({ data, onReserve, onBack, isLoading }) {
                 </div>
                 <div className="w-10"></div>
             </div>
-            <div className="space-y-3">{data.trains?.length > 0 ? (data.trains.map((train, index) => (<TrainCard key={index} train={train} trainType={data.train_type} onReserve={onReserve} isLoading={isLoading} />))) : (<div className="bg-white p-6 rounded-lg text-center text-slate-500">조회 가능한 열차가 없습니다.</div>)}</div>
+            {/* 아래 부분을 수정합니다. */}
+            <div className="space-y-3">
+                {data.trains?.length > 0 ? (
+                    data.trains.map((train, index) => (
+                        <TrainCard key={index} train={train} trainType={data.train_type} onReserve={onReserve} isLoading={isLoading} />
+                    ))
+                ) : (
+                    <EmptyResults searchParams={data} onBack={onBack} />
+                )}
+            </div>
         </div>
     );
 }
@@ -753,6 +781,31 @@ function AutoRetryView({ train, searchParams, onCancel }) {
                 <p className="mt-4 font-bold text-blue-600 text-lg">{countdown}초 후 다시 시도합니다.</p>
             </div>
             <button onClick={onCancel} className="mt-8 w-full bg-slate-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-slate-600 transition duration-300">중단하기</button>
+        </div>
+    );
+}
+
+function EmptyResults({ searchParams, onBack }) {
+    const dep = searchParams?.dep;
+    const arr = searchParams?.arr;
+    const time = searchParams?.time;
+
+    return (
+        <div className="text-center p-4 pt-12">
+            <AlertTriangleIcon className="w-16 h-16 mx-auto text-amber-400 mb-4" />
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">조회된 열차가 없습니다</h1>
+            <p className="text-slate-500 mb-8">
+                <strong>{dep} → {arr}</strong> 방면, <strong>{time}</strong> 이후의 열차가 매진되었거나 운행하지 않습니다.
+            </p>
+            <div className="space-y-4">                
+                <button
+                    onClick={onBack}
+                    className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 flex items-center justify-center"
+                >
+                    <BackIcon />
+                    <span className="ml-2">다시 검색하기</span>
+                </button>
+            </div>
         </div>
     );
 }

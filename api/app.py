@@ -1,3 +1,5 @@
+import json # json 모듈 추가
+from pywebpush import webpush, WebPushException # pywebpush 추가
 import sys
 import os
 from flask import Flask, request, jsonify
@@ -14,6 +16,7 @@ from ktx import SoldOutError, KorailError, TrainType, NoResultsError
 
 load_dotenv()
 app = Flask(__name__)
+push_subscription = None
 
 # --- Helper to add to_dict() methods to classes ---
 def add_to_dict_method(cls):
@@ -61,6 +64,41 @@ add_to_dict_method(ktx.Ticket)
 add_to_dict_method(ktx.Seat)
 
 # --- API Routes ---
+@app.route('/api/vapid_public_key')
+def vapid_public_key():
+    public_key = os.environ.get("VAPID_PUBLIC_KEY")
+    if not public_key:
+        return "VAPID public key not configured.", 500
+    return public_key
+
+@app.route('/api/subscribe', methods=['POST'])
+def subscribe():
+    global push_subscription
+    push_subscription = request.json
+    app.logger.info("Subscription received.")
+    return jsonify({'success': True}), 201
+
+def send_push_notification(title, body):
+    global push_subscription
+    if push_subscription is None:
+        app.logger.warning("No push subscription available to send notification.")
+        return
+
+    try:
+        webpush(
+            subscription_info=push_subscription,
+            data=json.dumps({"title": title, "body": body}),
+            vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY"),
+            vapid_claims={"sub": os.environ.get("VAPID_ADMIN_EMAIL")}
+        )
+        app.logger.info("Push notification sent successfully.")
+    except WebPushException as ex:
+        app.logger.error(f"WebPushException: {ex}")
+        # 푸시 구독이 만료되었을 수 있으므로 삭제
+        if ex.response and ex.response.status_code == 410:
+            push_subscription = None
+    except Exception as e:
+        app.logger.error(f"An error occurred while sending push notification: {e}")
 
 @app.route('/api/search')
 def search():
@@ -150,6 +188,14 @@ def reserve():
         if not target_train: return jsonify({'error_message': "선택한 열차를 찾을 수 없습니다."}), 404
 
         reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
+
+        # 예매 성공 알림 보내기
+        dep = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
+        arr = target_train.arr_station_name if train_type == 'SRT' else target_train.arr_name
+        send_push_notification(
+            title="✅ 예매 성공!",
+            body=f"{dep} → {arr} 열차 예매에 성공했습니다."
+        )
         return jsonify({'reservation': reservation.to_dict()})
 
     except (SRTLoginError) as e:
@@ -196,6 +242,13 @@ def auto_retry():
         if not target_train: return jsonify({'error_message': "선택한 열차를 찾을 수 없습니다."}), 404
         
         reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
+        # 예매 성공 알림 보내기
+        dep = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
+        arr = target_train.arr_station_name if train_type == 'SRT' else target_train.arr_name
+        send_push_notification(
+            title="✅ 예매 성공!",
+            body=f"{dep} → {arr} 열차 예매에 성공했습니다."
+        )
         return jsonify({'reservation': reservation.to_dict()})
 
     except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
