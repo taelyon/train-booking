@@ -378,7 +378,6 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
             <div className="text-center">
                 <TrainIcon className="w-12 h-12 mx-auto text-blue-600 mb-2" />
                 <h1 className="text-3xl font-bold text-slate-800">어디로 떠나시나요?</h1>
-                <p className="text-slate-500 mt-1">기차표를 쉽고 빠르게 예매하세요.</p>
             </div>
             
             <div className="bg-white rounded-xl shadow-lg p-5">
@@ -396,14 +395,23 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                          <button type="button" onClick={handleAddFavorite} className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
                     </div>
                     
-                    <div className="flex gap-4">
-                        <div className="flex-1 min-w-0">
-                            <label className="block text-slate-700 text-sm font-bold mb-1">출발일</label>
-                            <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                         <div className="flex-1 min-w-0">
-                            <label className="block text-slate-700 text-sm font-bold mb-1">출발시각</label>
-                            <input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">출발일시</label>
+                        <div className="flex items-center border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden">
+                            <input 
+                                type="date" 
+                                name="date" 
+                                defaultValue={today} 
+                                required 
+                                className="flex-1 min-w-0 px-3 py-2 border-r border-slate-300 focus:outline-none bg-white" 
+                            />
+                            <input 
+                                type="time" 
+                                name="time" 
+                                defaultValue={currentTime} 
+                                required 
+                                className="flex-1 min-w-0 px-3 py-2 focus:outline-none bg-white" 
+                            />
                         </div>
                     </div>
 
@@ -439,7 +447,7 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
 
 function StationSelect({ label, name, stations, value, onChange }) {
     return (
-        <div className="text-center flex-1">
+        <div className="flex-1 flex flex-col items-center">
             <label htmlFor={name} className="text-xs text-slate-500 font-semibold">{label}</label>
             <select 
                 name={name} 
@@ -736,7 +744,7 @@ function AutoRetryView({ train, searchParams, onCancel }) {
     return (
         <div className="text-center p-4">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">빈 자리 확인 중...</h1>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">자동 예매 시도 중...</h1>
             <p className="text-slate-600 mb-6">선택한 열차의 취소표를 실시간으로 확인하고 있습니다.</p>
             <div className="bg-slate-50 p-4 rounded-lg shadow-inner border">
                 <p className="font-semibold text-slate-800">{train.dep_station_name || train.dep_name} → {train.arr_station_name || train.arr_name}</p>
@@ -747,5 +755,4 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
-
 
