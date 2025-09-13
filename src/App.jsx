@@ -27,6 +27,40 @@ const BackIcon = () => (
     </svg>
 );
 
+const TrainIcon = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M3 17V9a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8"></path>
+        <path d="M8 17a2 2 0 0 0-2 2v1h12v-1a2 2 0 0 0-2-2Z"></path>
+        <path d="M5 17h14"></path>
+        <path d="M17 5v-2"></path>
+        <path d="M7 5v-2"></path>
+    </svg>
+);
+
+// --- Sound Utility ---
+const playSuccessSound = () => {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioContext) return;
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(660, audioContext.currentTime); // E5 note
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.1); // A5 note
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.25);
+    } catch (e) {
+        console.error("Could not play sound:", e);
+    }
+};
+
 
 // --- Constants ---
 const STATIONS = {
@@ -82,13 +116,13 @@ function BottomNav({ activeTab, setActiveTab }) {
 // --- Screens & Flows ---
 
 function SearchAndBookingFlow() {
-    const [view, setView] = useState('search'); // 'search', 'results', 'resultMessage', 'autoRetry'
+    const [view, setView] = useState('search'); // 'search', 'results', 'autoRetry'
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [searchParams, setSearchParams] = useState(null);
     const [searchResults, setSearchResults] = useState([]);
     const [autoRetryData, setAutoRetryData] = useState(null);
-    const [reservationResult, setReservationResult] = useState(null);
+    const [reservationResult, setReservationResult] = useState(null); // Used for the popup
     const [favorites, setFavorites] = useState([]);
 
     useEffect(() => {
@@ -180,7 +214,7 @@ function SearchAndBookingFlow() {
                 body: new URLSearchParams(body),
             });
             const result = await response.json();
-             if (!response.ok) throw new Error(result.error_message || '예약 처리 중 오류가 발생했습니다.');
+            if (!response.ok) throw new Error(result.error_message || '예약 처리 중 오류가 발생했습니다.');
             
             if (result.retry) {
                  const attempt = (autoRetryData?.attempt || 0) + 1;
@@ -188,34 +222,50 @@ function SearchAndBookingFlow() {
                  setView('autoRetry');
             } else if (result.reservation) {
                 setAutoRetryData(null);
+                playSuccessSound();
                 setReservationResult({ success: true, data: result.reservation });
-                setView('resultMessage');
             } else {
                  setAutoRetryData(null);
                  setReservationResult({ success: false, message: result.error_message || '알 수 없는 오류가 발생했습니다.' });
-                 setView('resultMessage');
             }
         } catch (err) {
             setAutoRetryData(null);
             setReservationResult({ success: false, message: err.message });
-            setView('resultMessage');
         } finally {
             if (!autoRetryData) {
                setIsLoading(false);
             }
         }
     };
+    
+    const renderMainView = () => {
+        switch (view) {
+            case 'results': return <ResultsView data={searchResults} onReserve={handleReserve} onBack={() => setView('search')} isLoading={isLoading} />;
+            case 'autoRetry': return <AutoRetryView key={autoRetryData?.attempt} train={autoRetryData?.train} searchParams={searchParams} onCancel={() => { setAutoRetryData(null); setView('results'); setIsLoading(false); }} />;
+            default: return <SearchForm onSubmit={handleSearch} isLoading={isLoading} favorites={favorites} onAddFavorite={addFavorite} onRemoveFavorite={removeFavorite} />;
+        }
+    };
 
-    if (error) {
-        return <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>
-    }
+    return (
+        <>
+            {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
+            
+            {renderMainView()}
 
-    switch (view) {
-        case 'results': return <ResultsView data={searchResults} onReserve={handleReserve} onBack={() => setView('search')} isLoading={isLoading} />;
-        case 'resultMessage': return <ResultMessage result={reservationResult} onBack={() => setView('search')} />;
-        case 'autoRetry': return <AutoRetryView key={autoRetryData.attempt} train={autoRetryData.train} searchParams={searchParams} onCancel={() => { setAutoRetryData(null); setView('results'); setIsLoading(false); }} />;
-        default: return <SearchForm onSubmit={handleSearch} isLoading={isLoading} favorites={favorites} onAddFavorite={addFavorite} onRemoveFavorite={removeFavorite} />;
-    }
+            {reservationResult && (
+                <ResultMessage
+                    result={reservationResult}
+                    onBack={() => {
+                        const isSuccess = reservationResult.success;
+                        setReservationResult(null);
+                        if (isSuccess) {
+                            setView('search');
+                        }
+                    }}
+                />
+            )}
+        </>
+    );
 }
 
 function ReservationsScreen() {
@@ -325,14 +375,17 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-slate-800">어디로 떠나시나요? 🚆</h1>
+            <h1 className="text-3xl font-bold text-slate-800 flex items-center justify-center">
+                <span>어디로 떠나시나요?</span>
+                <TrainIcon className="w-9 h-9 ml-2 text-blue-600" />
+            </h1>
             
             {favorites.length > 0 && (
-                <div>
-                    <h3 className="font-bold text-slate-700 mb-2">⭐ 즐겨찾는 구간</h3>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="font-bold text-slate-700 mb-3">⭐ 즐겨찾는 구간</h3>
                     <ul className="space-y-2">
                         {favorites.map((fav, index) => (
-                            <li key={index} className="flex justify-between items-center bg-slate-100 p-2 rounded-lg">
+                            <li key={index} className="flex justify-between items-center bg-white p-2 rounded-lg shadow-sm">
                                 <button type="button" onClick={() => applyFavorite(fav)} className="text-left flex-grow hover:opacity-80 transition">
                                     <span className={`inline-block rounded px-2 py-1 text-xs font-semibold mr-2 ${fav.type === 'SRT' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'}`}>{fav.type}</span>
                                     <span className="font-semibold text-slate-800">{fav.dep} → {fav.arr}</span>
@@ -514,31 +567,46 @@ function ReservationsView({ reservations, onCancel, isLoading }) {
 }
 
 function ResultMessage({ result, onBack }) {
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setVisible(true), 10); // Animate in
+        return () => clearTimeout(timer);
+    }, []);
+
+    const handleBack = () => {
+        setVisible(false);
+        setTimeout(onBack, 300); // Wait for animation to finish
+    };
+    
     const isSuccess = result?.success;
     const message = result?.message || (isSuccess ? '성공적으로 처리되었습니다.' : '오류가 발생했습니다.');
     const details = result?.data;
     
     return (
-        <div className="text-center p-4">
-            <div className={`mx-auto mb-4 w-16 h-16 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
-                <span className="text-4xl">{isSuccess ? '✅' : '😥'}</span>
-            </div>
-            <h1 className={`text-2xl font-bold mb-2 ${isSuccess ? 'text-green-700' : 'text-red-700'}`}>{isSuccess ? '처리 완료' : '처리 실패'}</h1>
-            <p className="text-slate-600 mb-6">{message}</p>
-            {details && (
-                <div className="text-left bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm">
-                    <p className="font-semibold">{details.dump}</p>
-                    {details.payment_date && details.payment_date !== "00000000" && (
-                        <p className="mt-2 text-red-600 font-bold">
-                            결제 기한: {`${details.payment_date.substring(4,6)}월 ${details.payment_date.substring(6,8)}일 ${details.payment_time.substring(0,2)}:${details.payment_time.substring(2,4)}`}
-                        </p>
-                    )}
+        <div className={`fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}>
+            <div className={`bg-white rounded-lg shadow-xl w-full max-w-sm text-center p-6 transform transition-all duration-300 ${visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                <div className={`mx-auto mb-4 w-16 h-16 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                    <span className="text-4xl">{isSuccess ? '✅' : '😥'}</span>
                 </div>
-            )}
-            <button onClick={onBack} className="mt-8 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">확인</button>
+                <h1 className={`text-2xl font-bold mb-2 ${isSuccess ? 'text-green-700' : 'text-red-700'}`}>{isSuccess ? '처리 완료' : '처리 실패'}</h1>
+                <p className="text-slate-600 mb-6">{message}</p>
+                {details && (
+                    <div className="text-left bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm">
+                        <p className="font-semibold">{details.dump}</p>
+                        {details.payment_date && details.payment_date !== "00000000" && (
+                            <p className="mt-2 text-red-600 font-bold">
+                                결제 기한: {`${details.payment_date.substring(4,6)}월 ${details.payment_date.substring(6,8)}일 ${details.payment_time.substring(0,2)}:${details.payment_time.substring(2,4)}`}
+                            </p>
+                        )}
+                    </div>
+                )}
+                <button onClick={handleBack} className="mt-8 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">확인</button>
+            </div>
         </div>
     );
 }
+
 
 function AutoRetryView({ train, searchParams, onCancel }) {
     const [countdown, setCountdown] = useState(5);
@@ -552,7 +620,7 @@ function AutoRetryView({ train, searchParams, onCancel }) {
     return (
         <div className="text-center p-4">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">빈 자리 확인 중...</h1>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">자동 예매 시도 중...</h1>
             <p className="text-slate-600 mb-6">선택한 열차의 취소표를 실시간으로 확인하고 있습니다.</p>
             <div className="bg-slate-50 p-4 rounded-lg shadow-inner border">
                 <p className="font-semibold text-slate-800">{train.dep_station_name || train.dep_name} → {train.arr_station_name || train.arr_name}</p>
