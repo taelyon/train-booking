@@ -432,7 +432,7 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                     <div className="flex flex-wrap justify-center gap-2">
                         {favorites.map((fav, index) => (
                             <div key={index} className="relative group">
-                                <button type="button" onClick={() => applyFavorite(fav)} className="bg-white border border-slate-300 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition">
+                                <button type="button" onClick={() => applyFavorite(fav)} onTouchEnd={(e) => { e.preventDefault(); applyFavorite(fav); }} className="bg-white border border-slate-300 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition">
                                     <span className={`font-bold ${fav.type === 'SRT' ? 'text-purple-600' : 'text-blue-600'}`}>{fav.type}</span> {fav.dep} → {fav.arr}
                                 </button>
                                  <button type="button" onClick={() => onRemoveFavorite(fav)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">×</button>
