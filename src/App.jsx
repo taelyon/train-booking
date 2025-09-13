@@ -363,12 +363,12 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                     <button type="button" onClick={handleAddFavorite} className="w-full bg-amber-300 text-amber-900 font-semibold py-2.5 px-4 rounded-lg hover:bg-amber-400 transition text-sm">★ 현재 구간 즐겨찾기</button>
                 </div>
                 
-                <div className="flex gap-2">
-                    <div className="flex-1 min-w-0">
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
                         <label className="block text-slate-700 text-sm font-bold mb-2">출발일</label>
                         <input type="date" name="date" defaultValue={today} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div>
                         <label className="block text-slate-700 text-sm font-bold mb-2">시각</label>
                         <input type="time" name="time" defaultValue={currentTime} required className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
@@ -554,9 +554,3 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
-
-
-
-
-
-
