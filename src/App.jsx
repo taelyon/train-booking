@@ -37,8 +37,7 @@ export default function App() {
             setFavorites([]);
         }
     }, []);
-    
-    // 🔽 즐겨찾기 로직을 'type' 포함하도록 수정 🔽
+
     const updateFavorites = (newFavorites) => {
         const uniqueFavorites = Array.from(new Set(newFavorites.map(fav => JSON.stringify(fav)))).map(favStr => JSON.parse(favStr));
         localStorage.setItem('trainFavorites', JSON.stringify(uniqueFavorites));
@@ -96,7 +95,6 @@ export default function App() {
     const handleReserve = async (train, seatType, isRetry = false) => {
         setIsLoading(true);
         setError('');
-        setAutoRetryData(null);
         
         if (!searchParams) {
             setError('검색 정보가 유효하지 않습니다. 다시 검색해주세요.');
@@ -122,19 +120,25 @@ export default function App() {
              if (!response.ok) throw new Error(result.error_message || '예약 처리 중 오류가 발생했습니다.');
             
             if (result.retry) {
-                 setAutoRetryData({ train, seatType });
+                 const attempt = (autoRetryData?.attempt || 0) + 1;
+                 setAutoRetryData({ train, seatType, attempt });
             } else if (result.reservation) {
+                setAutoRetryData(null);
                 setReservationResult({ success: true, data: result.reservation });
                 setView('resultMessage');
             } else {
+                 setAutoRetryData(null);
                  setReservationResult({ success: false, message: result.error_message || '알 수 없는 오류가 발생했습니다.' });
                  setView('resultMessage');
             }
         } catch (err) {
+            setAutoRetryData(null);
             setReservationResult({ success: false, message: err.message });
             setView('resultMessage');
         } finally {
-            setIsLoading(false);
+            if (!autoRetryData) {
+               setIsLoading(false);
+            }
         }
     };
     
@@ -155,7 +159,6 @@ export default function App() {
     };
 
     const handleCancel = async (pnr_no, train_type, is_ticket) => {
-        // 🔽 요청을 보내기 전, 필수 정보가 있는지 먼저 확인하는 코드를 추가했습니다. 🔽
         if (!pnr_no || !train_type) {
             alert('오류: 취소에 필요한 예약번호 또는 열차 종류 정보가 없습니다. 페이지를 새로고침 후 다시 시도해주세요.');
             setIsLoading(false);
@@ -165,11 +168,9 @@ export default function App() {
         if (!window.confirm('정말로 이 예매를 취소하시겠습니까?')) return;
         setIsLoading(true);
         try {
-            // 🔽 데이터를 더 명시적이고 안정적인 방식으로 구성하도록 수정했습니다. 🔽
             const body = new URLSearchParams();
             body.append('pnr_no', pnr_no);
             body.append('train_type', train_type);
-            // is_ticket 값은 true/false 또는 undefined일 수 있으므로, 문자열로 변환하여 전달합니다.
             body.append('is_ticket', String(is_ticket === true));
 
             const response = await fetch('/api/cancel', {
@@ -181,7 +182,6 @@ export default function App() {
             if (!response.ok) throw new Error(result.error_message || '취소 중 오류 발생');
             
             setReservationResult({ success: true, message: result.message });
-            // 취소 성공 후, 예매 내역을 다시 불러와 화면을 갱신합니다.
             await fetchReservations(); 
             setView('resultMessage');
         } catch(err) {
@@ -193,7 +193,20 @@ export default function App() {
     }
 
     const renderContent = () => {
-        if (autoRetryData) return <AutoRetryView train={autoRetryData.train} searchParams={searchParams} onCancel={() => { setAutoRetryData(null); setView('results'); }} />;
+        if (autoRetryData) {
+            return (
+                <AutoRetryView 
+                    key={autoRetryData.attempt} 
+                    train={autoRetryData.train} 
+                    searchParams={searchParams} 
+                    onCancel={() => { 
+                        setAutoRetryData(null); 
+                        setView('results'); 
+                        setIsLoading(false);
+                    }} 
+                />
+            );
+        }
         switch (view) {
             case 'results': return <ResultsView data={searchResults} onReserve={handleReserve} onBack={() => setView('search')} isLoading={isLoading} />;
             case 'reservations': return <ReservationsView reservations={reservations} onBack={() => setView('search')} onCancel={handleCancel} isLoading={isLoading} />;
@@ -222,8 +235,6 @@ export default function App() {
 }
 
 // --- Sub-components ---
-
-// 🔽 SearchForm 컴포넌트 전체 수정 🔽
 
 function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddFavorite, onRemoveFavorite }) {
     const [trainType, setTrainType] = useState('SRT');
@@ -294,7 +305,6 @@ function SearchForm({ onSubmit, onShowReservations, isLoading, favorites, onAddF
                         <StationSelect key={`${trainType}-dep`} label="출발역" name="dep" stations={STATIONS[trainType]} value={depStation} onChange={e => setDepStation(e.target.value)} />
                     </div>
                     <div className="mt-7">
-                        {/* 🔽 SVG 아이콘을 텍스트로 교체했습니다. 🔽 */}
                         <button type="button" onClick={handleSwapStations} className="p-2 w-10 h-10 flex items-center justify-center border rounded-full bg-gray-100 hover:bg-gray-200 transition text-xl font-bold text-gray-600">
                             ↔
                         </button>
@@ -349,11 +359,23 @@ function ResultsView({ data, onReserve, onBack, isLoading }) {
 
 function TrainCard({ train, trainType, onReserve, isLoading }) {
     const isSrt = trainType === 'SRT';
-    const isSeatAvailable = isSrt ? train.seat_available : train.has_seat;
     const isGeneralAvailable = isSrt ? train.general_seat_available : train.has_general_seat;
     const isSpecialAvailable = isSrt ? train.special_seat_available : train.has_special_seat;
-    const [selectedSeat, setSelectedSeat] = useState(() => isGeneralAvailable ? 'GENERAL' : (isSpecialAvailable ? 'SPECIAL' : 'GENERAL'));
-    const depTime = train.dep_time; const arrTime = train.arr_time;
+    
+    // 🔽 초기 선택 좌석을 예매 가능한 좌석으로 설정합니다. 둘 다 매진이면 일반실을 기본으로 합니다. 🔽
+    const [selectedSeat, setSelectedSeat] = useState(() => {
+        if (isGeneralAvailable) return 'GENERAL';
+        if (isSpecialAvailable) return 'SPECIAL';
+        return 'GENERAL';
+    });
+
+    const depTime = train.dep_time; 
+    const arrTime = train.arr_time;
+
+    // 🔽 선택된 좌석의 예매 가능 여부를 확인하는 변수입니다. 🔽
+    const isSelectedSeatAvailable = 
+        (selectedSeat === 'GENERAL' && isGeneralAvailable) || 
+        (selectedSeat === 'SPECIAL' && isSpecialAvailable);
 
     return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-md p-4">
@@ -363,17 +385,57 @@ function TrainCard({ train, trainType, onReserve, isLoading }) {
                 <div className="text-2xl text-blue-800">→</div>
                 <div className="text-center"><div className="text-xl font-bold">{arrTime.substring(0,2)}:{arrTime.substring(2,4)}</div><div className="text-sm text-gray-600">{train.arr_station_name || train.arr_name}</div></div>
             </div>
-            <div className="border-t pt-3"><div className="flex justify-around gap-2"><SeatOption label="일반실" value="GENERAL" state={train.general_seat_state || (isGeneralAvailable ? '예약가능' : '매진')} available={isGeneralAvailable} selectedSeat={selectedSeat} setSelectedSeat={setSelectedSeat} /><SeatOption label="특실" value="SPECIAL" state={train.special_seat_state || (isSpecialAvailable ? '예약가능' : '매진')} available={isSpecialAvailable} selectedSeat={selectedSeat} setSelectedSeat={setSelectedSeat} /></div></div>
-            <button onClick={() => onReserve(train, selectedSeat)} disabled={isLoading} className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400 ${isSeatAvailable ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600 text-gray-800'}`}>{isSeatAvailable ? '예매하기' : '🔄 자동 예매 시도'}</button>
+            <div className="border-t pt-3">
+                <div className="flex justify-around gap-2">
+                    <SeatOption 
+                        label="일반실" 
+                        value="GENERAL" 
+                        state={train.general_seat_state || (isGeneralAvailable ? '예약가능' : '매진')} 
+                        available={isGeneralAvailable} 
+                        selectedSeat={selectedSeat} 
+                        setSelectedSeat={setSelectedSeat} 
+                    />
+                    <SeatOption 
+                        label="특실" 
+                        value="SPECIAL" 
+                        state={train.special_seat_state || (isSpecialAvailable ? '예약가능' : '매진')} 
+                        available={isSpecialAvailable} 
+                        selectedSeat={selectedSeat} 
+                        setSelectedSeat={setSelectedSeat} 
+                    />
+                </div>
+            </div>
+            {/* 🔽 선택된 좌석의 상태에 따라 버튼의 텍스트, 색상, 동작이 변경됩니다. 🔽 */}
+            <button 
+                onClick={() => onReserve(train, selectedSeat, !isSelectedSeatAvailable)} 
+                disabled={isLoading} 
+                className={`w-full mt-4 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400 ${
+                    isSelectedSeatAvailable 
+                        ? 'bg-green-600 hover:bg-green-700' 
+                        : 'bg-yellow-500 hover:bg-yellow-600 text-gray-800'
+                }`}
+            >
+                {isSelectedSeatAvailable ? '예매하기' : '🔄 자동 예매 시도'}
+            </button>
         </div>
     );
 }
 
 function SeatOption({ label, value, state, available, selectedSeat, setSelectedSeat }) {
     return (
-        <label className={`flex-1 p-2 border rounded-md text-center transition ${!available ? 'cursor-not-allowed' : 'cursor-pointer'} ${selectedSeat === value ? 'bg-blue-100 border-blue-500' : 'bg-gray-50'}`}>
-            <input type="radio" name={`seat_type_${label}`} value={value} checked={selectedSeat === value} onChange={() => setSelectedSeat(value)} disabled={!available} className="sr-only"/>
-            <span className={`font-semibold ${available ? (selectedSeat === value ? 'text-blue-800' : 'text-gray-800') : 'text-gray-400'}`}>{label}: {state}</span>
+        // 🔽 이제 매진 여부와 상관없이 항상 선택(클릭)이 가능하도록 'cursor-pointer'를 사용하고, disabled 속성을 제거했습니다. 🔽
+        <label className={`flex-1 p-2 border rounded-md text-center cursor-pointer transition ${selectedSeat === value ? 'bg-blue-100 border-blue-500' : 'bg-gray-50'}`}>
+            <input 
+                type="radio" 
+                name={`seat_type_${label}`} 
+                value={value} 
+                checked={selectedSeat === value} 
+                onChange={() => setSelectedSeat(value)} 
+                className="sr-only"
+            />
+            <span className={`font-semibold ${available ? (selectedSeat === value ? 'text-blue-800' : 'text-gray-800') : 'text-gray-400'}`}>
+                {label}: {state}
+            </span>
         </label>
     );
 }

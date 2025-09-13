@@ -91,7 +91,7 @@ def search():
         elif train_type == 'KTX':
             ktx_client = ktx.Korail(korail_id="-", korail_pw="-", auto_login=False)
             trains = ktx_client.search_train(
-                dep=dep_station, arr=arr_station, date=date_str, time=time_str, 
+                dep=dep_station, arr=arr_station, date=date_str, time=time_str,
                 include_no_seats=True,
                 train_type=ktx.TrainType.KTX
             )
@@ -152,8 +152,17 @@ def reserve():
         reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
         return jsonify({'reservation': reservation.to_dict()})
 
-    except (SRTLoginError, KorailError) as e: return jsonify({'error_message': f'로그인 실패: {e}'}), 401
-    except Exception as e: return jsonify({'error_message': str(e)}), 500
+    except (SRTLoginError) as e:
+        return jsonify({'error_message': f'로그인 실패: {e}'}), 401
+    except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
+        msg = str(e)
+        if "잔여석없음" in msg or "Sold out" in msg or "매진" in msg:
+            return jsonify({'retry': True, 'message': '매진. 5초 후 재시도합니다.'})
+        if isinstance(e, KorailError):
+            return jsonify({'error_message': f'오류: {e}'}), 401
+        return jsonify({'error_message': msg}), 500
+    except Exception as e:
+        return jsonify({'error_message': str(e)}), 500
 
 @app.route('/api/auto-retry', methods=['POST'])
 def auto_retry():
