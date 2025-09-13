@@ -539,32 +539,148 @@ function SeatOption({ label, value, state, available, selectedSeat, setSelectedS
     );
 }
 
-function ReservationsView({ reservations, onCancel, isLoading }) {
-    const renderList = (type, list, error) => (
-        <div className="mb-8">
-            <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
-            <div className="space-y-3">
-                {error ? <p className="text-red-500">{error}</p> :
-                 list?.length > 0 ? list.map((r, i) => (
-                    <div key={i} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                        <p className="text-slate-800 mb-3 font-semibold text-sm leading-relaxed">{r.dump}</p>
-                        <button onClick={() => onCancel(r.pnr_no || r.reservation_number, type, r.is_ticket)} disabled={isLoading} className="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition disabled:bg-slate-400">
-                            {isLoading ? '취소 중...' : '예매 취소'}
-                        </button>
+function ReservationCard({ reservation, type, onCancel, isLoading }) {
+    // --- Data Normalization ---
+    const isSrt = type === 'SRT';
+    const trainName = isSrt ? reservation.train_name : reservation.train_type_name;
+    const trainNo = isSrt ? reservation.train_number : reservation.train_no;
+    const depName = isSrt ? reservation.dep_station_name : reservation.dep_name;
+    const arrName = isSrt ? reservation.arr_station_name : reservation.arr_name;
+    const depDate = isSrt ? reservation.dep_date : (reservation.dep_date || reservation.run_date);
+    const depTime = reservation.dep_time;
+    const arrTime = reservation.arr_time;
+    const price = isSrt ? reservation.total_cost : reservation.price;
+    const seatCount = isSrt ? reservation.seat_count : reservation.seat_no_count;
+    const pnrNo = isSrt ? reservation.reservation_number : (reservation.pnr_no || reservation.rsv_id);
+    const isTicket = isSrt ? reservation.paid : reservation.is_ticket;
+    const isWaiting = reservation.is_waiting;
+    const paymentDate = isSrt ? reservation.payment_date : reservation.buy_limit_date;
+    const paymentTime = isSrt ? reservation.payment_time : reservation.buy_limit_time;
+
+    // --- Status Logic ---
+    let statusText, statusColor, paymentInfo = null;
+    if (isWaiting) {
+        statusText = "예약 대기";
+        statusColor = "bg-gray-500 text-white";
+    } else if (isTicket) {
+        statusText = "결제 완료";
+        statusColor = "bg-green-600 text-white";
+    } else {
+        statusText = "결제 대기";
+        statusColor = "bg-orange-500 text-white";
+        if (paymentDate && paymentDate !== "00000000") {
+             paymentInfo = `결제기한: ${paymentDate.substring(4,6)}월 ${paymentDate.substring(6,8)}일 ${paymentTime.substring(0,2)}:${paymentTime.substring(2,4)}`;
+        }
+    }
+
+    const formattedDate = `${depDate.substring(0,4)}년 ${depDate.substring(4,6)}월 ${depDate.substring(6,8)}일`;
+
+    return (
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-3">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                <span className="text-sm font-semibold text-slate-600">{formattedDate}</span>
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusColor}`}>{statusText}</span>
+            </div>
+
+            <div>
+                 <div className="flex justify-between items-baseline mb-2">
+                    <span className={`font-bold text-lg ${type === 'SRT' ? 'text-purple-700' : 'text-blue-700'}`}>{trainName} {trainNo}</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                    <div className="text-center">
+                        <div className="text-xl font-bold text-slate-800">{depTime.substring(0,2)}:{depTime.substring(2,4)}</div>
+                        <div className="text-md text-slate-600">{depName}</div>
                     </div>
-                 )) : <p className="text-slate-500 text-center py-4">예매 내역이 없습니다.</p>
-                }
+                     <div className="flex-grow flex items-center justify-center text-slate-400 px-2">
+                        <div className="flex-grow border-t-2 border-dotted border-slate-300"></div>
+                        <TrainIcon className="w-5 h-5 mx-2 flex-shrink-0" />
+                        <div className="flex-grow border-t-2 border-dotted border-slate-300"></div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-xl font-bold text-slate-800">{arrTime.substring(0,2)}:{arrTime.substring(2,4)}</div>
+                        <div className="text-md text-slate-600">{arrName}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-3 space-y-3">
+                 <div className="flex justify-between text-sm text-slate-700">
+                    <span>{seatCount}석</span>
+                    <span className="font-bold">{new Intl.NumberFormat('ko-KR').format(price)}원</span>
+                 </div>
+                 {paymentInfo && <p className="text-sm text-center text-red-600 font-bold p-2 bg-red-50 rounded-md">{paymentInfo}</p>}
+                 <button 
+                     onClick={() => onCancel(pnrNo, type, isTicket)} 
+                     disabled={isLoading} 
+                     className="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition disabled:bg-slate-400"
+                 >
+                     {isLoading ? '취소 중...' : '예매 취소'}
+                 </button>
             </div>
         </div>
     );
+}
 
+function EmptyReservations() {
     return (
-        <div>
-            {renderList('SRT', reservations.srt_reservations, reservations.srt_error)}
-            {renderList('KTX', reservations.ktx_reservations, reservations.ktx_error)}
+        <div className="text-center py-16 px-4">
+            <TicketIcon className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+            <h2 className="text-xl font-bold text-slate-700 mb-2">예매 내역이 비어있습니다</h2>
+            <p className="text-slate-500">아직 예매하신 기차표가 없네요.<br />첫 여행을 계획해 보세요!</p>
         </div>
     );
 }
+
+function ReservationsView({ reservations, onCancel, isLoading }) {
+    const srtList = reservations.srt_reservations || [];
+    const ktxList = reservations.ktx_reservations || [];
+    const srtError = reservations.srt_error;
+    const ktxError = reservations.ktx_error;
+
+    const hasSrtReservations = srtList.length > 0;
+    const hasKtxReservations = ktxList.length > 0;
+
+    if (!hasSrtReservations && !hasKtxReservations && !srtError && !ktxError) {
+        return <EmptyReservations />;
+    }
+
+    const renderList = (type, list, error) => {
+        if (error) {
+            return (
+                 <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
+                    <p className="text-red-500 p-4 bg-red-50 rounded-lg">{type} 예매 내역을 불러오는 중 오류가 발생했습니다.</p>
+                 </div>
+            );
+        }
+        if (!list || list.length === 0) return null;
+
+        return (
+            <div className="mb-8">
+                <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
+                <div className="space-y-4">
+                    {list.map((r, i) => (
+                        <ReservationCard 
+                            key={`${type}-${i}`}
+                            reservation={r}
+                            type={type}
+                            onCancel={onCancel}
+                            isLoading={isLoading}
+                        />
+                     ))}
+                </div>
+            </div>
+        );
+    }
+    
+    return (
+        <div>
+            {renderList('SRT', srtList, srtError)}
+            {renderList('KTX', ktxList, ktxError)}
+        </div>
+    );
+}
+
 
 function ResultMessage({ result, onBack }) {
     const [visible, setVisible] = useState(false);
@@ -631,4 +747,3 @@ function AutoRetryView({ train, searchParams, onCancel }) {
         </div>
     );
 }
-
