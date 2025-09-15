@@ -1227,16 +1227,19 @@ class SRT:
 
         return True
 
-    def reserve_info(self, reservation: SRTReservation | int) -> bool:
-        referer = API_ENDPOINTS["reserve_info_referer"] + reservation.reservation_number
+    def reserve_info(self, reservation: SRTReservation | int) -> dict:
+        if not isinstance(reservation, (SRTReservation, int, str)):
+            raise TypeError("reservation must be SRTReservation or reservation number")
+        pnr_no = getattr(reservation, "reservation_number", reservation)
+        referer = API_ENDPOINTS["reserve_info_referer"] + pnr_no
         self._session.headers.update({"Referer": referer})
-        r = self._session.post(url=API_ENDPOINTS["reserve_info"])
+        r = self._session.post(url=API_ENDPOINTS["reserve_info"], data={"pnrNo": pnr_no})
         self._log(r.text)
         response = json.loads(r.text)
         if response.get("ErrorCode") == "0" and response.get("ErrorMsg") == "":
             return response.get("outDataSets").get("dsOutput1")[0]
         else:
-            raise SRTResponseError(response.get("ErrorMsg"))
+            raise SRTResponseError(response.get("ErrorMsg") or "Failed to get reservation info")
 
     def refund(self, reservation: SRTReservation | int) -> bool:
         info = self.reserve_info(reservation)
