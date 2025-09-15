@@ -329,7 +329,7 @@ def cancel():
         data = request.form
         train_type = data.get('train_type')
         pnr_no = data.get('pnr_no')
-        is_ticket = data.get('is_ticket') == 'True'
+        is_ticket = data.get('is_ticket', 'false').lower() == 'true'
 
         if not train_type or not pnr_no:
             return jsonify({'error_message': "취소 요청에 필요한 정보가 누락되었습니다."}), 400
