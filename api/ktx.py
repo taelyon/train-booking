@@ -1,11 +1,3 @@
-"""
-korail2.korail2
-~~~~~~~~~~~~~~~
-
-:copyright: (c) 2014 by Taehoon Kim.
-:license: BSD, see LICENSE for more details.
-"""
-
 import base64
 try:
     import curl_cffi
@@ -918,8 +910,12 @@ class Korail:
         return False
 
     def cancel(self, rsv):
-        if not isinstance(rsv, Reservation):
-            raise TypeError("rsv must be a Reservation instance")
+        if not isinstance(rsv, (Reservation, Ticket)):
+            raise TypeError("rsv must be a Reservation or Ticket instance")
+
+        if isinstance(rsv, Ticket):
+            return self.refund(rsv)
+        
         data = {
             "Device": self._device,
             "Version": self._version,
@@ -935,6 +931,8 @@ class Korail:
         return self._result_check(j)
 
     def refund(self, ticket):
+        if not isinstance(ticket, Ticket):
+            raise TypeError("ticket must be a Ticket instance")
         data = {
             "Device": self._device,
             "Version": self._version,
