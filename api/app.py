@@ -329,8 +329,8 @@ def cancel():
         data = request.form
         train_type = data.get('train_type')
         pnr_no = data.get('pnr_no')
+        is_ticket = data.get('is_ticket') == 'True'
 
-        # 🔽 train_type 값이 유효한지 먼저 확인합니다. 🔽
         if not train_type or not pnr_no:
             return jsonify({'error_message': "취소 요청에 필요한 정보가 누락되었습니다."}), 400
 
@@ -342,12 +342,15 @@ def cancel():
             if not target:
                 return jsonify({'error_message': "취소할 SRT 예매 내역을 찾을 수 없습니다."}), 404
             
-            client.cancel(target)
-            return jsonify({'message': f"SRT 예매({pnr_no})가 정상적으로 취소되었습니다."})
+            if is_ticket:
+                client.refund(target)
+            else:
+                client.cancel(target)
+            
+            return jsonify({'message': f"SRT 예매({pnr_no})가 정상적으로 취소(환불)되었습니다."})
 
         elif train_type == 'KTX':
             client = ktx.Korail(os.environ.get('KTX_ID'), os.environ.get('KTX_PW'))
-            is_ticket = data.get('is_ticket') == 'True'
             reservations = client.tickets() + client.reservations()
             target = next((r for r in reservations if (hasattr(r, 'pnr_no') and r.pnr_no == pnr_no) or (hasattr(r, 'rsv_id') and r.rsv_id == pnr_no)), None)
             
@@ -361,7 +364,6 @@ def cancel():
             
             return jsonify({'message': f"KTX 예매({pnr_no})가 정상적으로 취소(환불)되었습니다."})
         
-        # 🔽 'SRT'나 'KTX'가 아닐 경우, 잘못된 요청으로 처리합니다. 🔽
         else:
             return jsonify({'error_message': f"알 수 없는 열차 종류({train_type})입니다."}), 400
             
