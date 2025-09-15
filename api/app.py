@@ -133,7 +133,7 @@ def search():
                 include_no_seats=True,
                 train_type=ktx.TrainType.KTX
             )
-        
+
         response_data['trains'] = [train.to_dict() for train in trains]
         return jsonify(response_data)
 
@@ -166,7 +166,7 @@ def reserve():
         seat_type = form_data.get('seat_type')
 
         client, passengers, reserve_option, all_trains = (None, [], None, [])
-        
+
         if train_type == 'SRT':
             srt_id, srt_pw = os.environ.get('SRT_ID'), os.environ.get('SRT_PW')
             if not (srt_id and srt_pw): return jsonify({'error_message': "SRT 로그인 정보가 서버에 설정되지 않았습니다."}), 400
@@ -182,9 +182,9 @@ def reserve():
             all_trains = client.search_train(dep=dep_station, arr=arr_station, date=date_str, time=time_str, include_no_seats=True, train_type=ktx.TrainType.KTX)
             passengers = [ktx.AdultPassenger(adults)]
             reserve_option = ktx.ReserveOption.GENERAL_ONLY if seat_type == 'GENERAL' else ktx.ReserveOption.SPECIAL_ONLY
-        
+
         target_train = next((train for train in all_trains if (train.train_number if train_type == 'SRT' else train.train_no) == train_number), None)
-        
+
         if not target_train: return jsonify({'error_message': "선택한 열차를 찾을 수 없습니다."}), 404
 
         reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
@@ -220,7 +220,7 @@ def auto_retry():
         time_val = form_data.get('time')
         if not date_val or not time_val:
             return jsonify({'error_message': '자동 재시도를 위한 날짜 또는 시간 정보가 없습니다.'}), 400
-        
+
         date, time = date_val.replace('-', ''), time_val.replace(':', '') + '00'
         train_number = form_data.get('train_number')
         adults = int(form_data.get('adults', 1))
@@ -240,7 +240,7 @@ def auto_retry():
         all_trains = client.search_train(dep=dep, arr=arr, date=date, time=time, **search_options)
         target_train = next((t for t in all_trains if (t.train_number if train_type == 'SRT' else t.train_no) == train_number), None)
         if not target_train: return jsonify({'error_message': "선택한 열차를 찾을 수 없습니다."}), 404
-        
+
         reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
         # 예매 성공 알림 보내기
         dep = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
@@ -271,6 +271,57 @@ def reservations():
         results['ktx_reservations'] = [r.to_dict() for r in raw]
     except Exception as e: results['ktx_error'] = str(e)
     return jsonify(results)
+
+@app.route('/api/pay', methods=['POST'])
+def pay():
+    try:
+        data = request.form
+        train_type = data.get('train_type')
+        pnr_no = data.get('pnr_no')
+
+        if not train_type or not pnr_no:
+            return jsonify({'error_message': "결제 요청에 필요한 정보가 누락되었습니다."}), 400
+
+        if train_type == 'SRT':
+            client = srt.SRT(os.environ.get('SRT_ID'), os.environ.get('SRT_PW'))
+            reservations = client.get_reservations()
+            target = next((r for r in reservations if r.reservation_number == pnr_no), None)
+            
+            if not target:
+                return jsonify({'error_message': "결제할 SRT 예매 내역을 찾을 수 없습니다."}), 404
+            
+            client.pay_with_card(
+                target,
+                number=data.get('card_number'),
+                password=data.get('card_password'),
+                validation_number=data.get('card_birthday'),
+                expire_date=data.get('card_expire_date')
+            )
+            return jsonify({'message': f"SRT 예매({pnr_no})가 정상적으로 결제되었습니다."})
+
+        elif train_type == 'KTX':
+            client = ktx.Korail(os.environ.get('KTX_ID'), os.environ.get('KTX_PW'))
+            reservations = client.reservations()
+            target = next((r for r in reservations if r.rsv_id == pnr_no), None)
+
+            if not target:
+                return jsonify({'error_message': "결제할 KTX 예매 내역을 찾을 수 없습니다."}), 404
+
+            client.pay_with_card(
+                target,
+                card_number=data.get('card_number'),
+                card_password=data.get('card_password'),
+                birthday=data.get('card_birthday'),
+                card_expire=data.get('card_expire_date')
+            )
+            return jsonify({'message': f"KTX 예매({pnr_no})가 정상적으로 결제되었습니다."})
+        
+        else:
+            return jsonify({'error_message': f"알 수 없는 열차 종류({train_type})입니다."}), 400
+            
+    except Exception as e:
+        app.logger.error(f"An unexpected error occurred during payment: {e}", exc_info=True)
+        return jsonify({'error_message': str(e)}), 500
 
 @app.route('/api/cancel', methods=['POST'])
 def cancel():

@@ -291,6 +291,7 @@ function ReservationsScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
+    const [paymentInfo, setPaymentInfo] = useState(null); //결제정보
 
     const fetchReservations = async () => {
         setIsLoading(true);
@@ -337,14 +338,48 @@ function ReservationsScreen() {
         }
     };
 
+    const handlePayment = async (paymentDetails) => {
+        setIsLoading(true);
+        setError('');
+        setMessage('');
+        try {
+            const body = new URLSearchParams(paymentDetails);
+            const response = await fetch('/api/pay', { method: 'POST', body });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error_message || '결제 중 오류 발생');
+            
+            setMessage(result.message);
+            setPaymentInfo(null); // Close payment modal
+            await fetchReservations(); // Refresh the list
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
              <h1 className="text-3xl font-bold text-slate-800 text-center">예매 내역</h1>
              {error && <div className="bg-red-100 text-red-700 p-3 rounded-lg">{error}</div>}
              {message && <div className="bg-green-100 text-green-700 p-3 rounded-lg">{message}</div>}
              {isLoading ? <div className="text-center p-8"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div> :
-              <ReservationsView reservations={reservations} onCancel={handleCancel} isLoading={isLoading} />
+              <ReservationsView 
+                  reservations={reservations} 
+                  onCancel={handleCancel}
+                  onPay={(info) => setPaymentInfo(info)}
+                  isLoading={isLoading} 
+              />
              }
+            {paymentInfo && (
+                <PaymentModal
+                    reservation={paymentInfo.reservation}
+                    trainType={paymentInfo.type}
+                    onClose={() => setPaymentInfo(null)}
+                    onSubmit={handlePayment}
+                    isLoading={isLoading}
+                />
+            )}
         </div>
     )
 }
@@ -585,7 +620,7 @@ function SeatOption({ label, value, state, available, selectedSeat, setSelectedS
     );
 }
 
-function ReservationCard({ reservation, type, onCancel, isLoading }) {
+function ReservationCard({ reservation, type, onCancel, onPay, isLoading }) {
     // --- Data Normalization ---
     const isSrt = type === 'SRT';
     const trainName = isSrt ? reservation.train_name : reservation.train_type_name;
@@ -655,13 +690,24 @@ function ReservationCard({ reservation, type, onCancel, isLoading }) {
                     <span className="font-bold">{new Intl.NumberFormat('ko-KR').format(price)}원</span>
                  </div>
                  {paymentInfo && <p className="text-sm text-center text-red-600 font-bold p-2 bg-red-50 rounded-md">{paymentInfo}</p>}
-                 <button 
-                     onClick={() => onCancel(pnrNo, type, isTicket)} 
-                     disabled={isLoading} 
-                     className="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition disabled:bg-slate-400"
-                 >
-                     {isLoading ? '취소 중...' : '예매 취소'}
-                 </button>
+                 <div className="flex gap-2">
+                    {!isTicket && !isWaiting && (
+                        <button
+                            onClick={() => onPay({ reservation, type })}
+                            disabled={isLoading}
+                            className="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition disabled:bg-slate-400"
+                        >
+                            {isLoading ? '...' : '결제하기'}
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => onCancel(pnrNo, type, isTicket)} 
+                        disabled={isLoading} 
+                        className="flex-1 bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition disabled:bg-slate-400"
+                    >
+                        {isLoading ? '...' : (isTicket ? '환불하기' : '예매 취소')}
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -677,7 +723,7 @@ function EmptyReservations() {
     );
 }
 
-function ReservationsView({ reservations, onCancel, isLoading }) {
+function ReservationsView({ reservations, onCancel, onPay, isLoading }) {
     const srtList = reservations.srt_reservations || [];
     const ktxList = reservations.ktx_reservations || [];
     const srtError = reservations.srt_error;
@@ -711,6 +757,7 @@ function ReservationsView({ reservations, onCancel, isLoading }) {
                             reservation={r}
                             type={type}
                             onCancel={onCancel}
+                            onPay={onPay}
                             isLoading={isLoading}
                         />
                      ))}
@@ -727,6 +774,56 @@ function ReservationsView({ reservations, onCancel, isLoading }) {
     );
 }
 
+function PaymentModal({ reservation, trainType, onClose, onSubmit, isLoading }) {
+    const pnrNo = trainType === 'SRT' ? reservation.reservation_number : (reservation.pnr_no || reservation.rsv_id);
+    const price = trainType === 'SRT' ? reservation.total_cost : reservation.price;
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const paymentDetails = Object.fromEntries(formData.entries());
+        paymentDetails.pnr_no = pnrNo;
+        paymentDetails.train_type = trainType;
+        onSubmit(paymentDetails);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4">
+                <h2 className="text-xl font-bold text-center text-slate-800">결제 정보 입력</h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">카드 번호</label>
+                        <input name="card_number" type="text" placeholder="1234-5678-1234-5678" required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div className="flex gap-2">
+                        <div className="flex-1">
+                            <label className="block text-slate-700 text-sm font-bold mb-1">유효기간 (YYMM)</label>
+                            <input name="card_expire_date" type="text" placeholder="2809" required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-slate-700 text-sm font-bold mb-1">비밀번호 (앞 2자리)</label>
+                            <input name="card_password" type="password" placeholder="••" required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">생년월일 (YYMMDD)</label>
+                        <input name="card_birthday" type="text" placeholder="901231" required className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div className="text-center font-bold text-lg text-slate-800 pt-2">
+                        결제 금액: {new Intl.NumberFormat('ko-KR').format(price)}원
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={onClose} className="flex-1 bg-slate-200 text-slate-800 font-bold py-3 px-4 rounded-lg hover:bg-slate-300 transition">취소</button>
+                        <button type="submit" disabled={isLoading} className="flex-1 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition disabled:bg-slate-400">
+                            {isLoading ? '결제 중...' : '결제하기'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
 
 function ResultMessage({ result, onBack }) {
     const [visible, setVisible] = useState(false);
