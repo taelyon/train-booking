@@ -596,15 +596,15 @@ function TrainCard({ train, trainType, onReserve, isLoading }) {
                 <SeatOption label="일반실" value="GENERAL" state={train.general_seat_state || (isGeneralAvailable ? '예약가능' : '매진')} available={isGeneralAvailable} selectedSeat={selectedSeat} setSelectedSeat={setSelectedSeat} />
                 <SeatOption label="특실" value="SPECIAL" state={train.special_seat_state || (isSpecialAvailable ? '예약가능' : '매진')} available={isSpecialAvailable} selectedSeat={selectedSeat} setSelectedSeat={setSelectedSeat} />
             </div>
-            <button 
-                onClick={() => onReserve(train, selectedSeat, !isSelectedSeatAvailable)} 
-                disabled={isLoading} 
+            <button
+                onClick={() => onReserve(train, !isSelectedSeatAvailable, !isSelectedSeatAvailable)}
+                disabled={isLoading}
                 className={`w-full mt-4 text-white font-bold py-2.5 px-4 rounded-lg transition duration-300 disabled:bg-slate-400 flex justify-center items-center ${
                     isSelectedSeatAvailable ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'
                 }`}
             >
-                 {isLoading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>}
-                 {isSelectedSeatAvailable ? '예매하기' : '자동 예매 시도'}
+                {isLoading && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>}
+                {isSelectedSeatAvailable ? '예매하기' : '자동 예매 시도'}
             </button>
         </div>
     );
