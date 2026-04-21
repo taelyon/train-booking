@@ -389,16 +389,16 @@ function ReservationsScreen() {
 function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFavorite }) {
     const [trainType, setTrainType] = useState('SRT');
     const [depStation, setDepStation] = useState('수서');
-    const [arrStation, setArrStation] = useState('부산');
+    const [arrStation, setArrStation] = useState('광주송정');
     
     useEffect(() => {
         const defaultStations = STATIONS[trainType];
         if (trainType === 'SRT') {
             setDepStation(defaultStations.includes('수서') ? '수서' : defaultStations[0]);
-            setArrStation(defaultStations.includes('부산') ? '부산' : defaultStations[1]);
+            setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
         } else {
             setDepStation(defaultStations.includes('서울') ? '서울' : defaultStations[0]);
-            setArrStation(defaultStations.includes('부산') ? '부산' : defaultStations[1]);
+            setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
         }
     }, [trainType]);
 
