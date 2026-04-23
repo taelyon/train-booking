@@ -390,6 +390,14 @@ class SoldOutError(KorailError):
         super().__init__("Sold out", code)
 
 
+class MacroError(KorailError):
+    """매크로/봇 탐지 에러 - 코레일 서버가 자동화 요청을 차단할 때 발생"""
+    codes = {"MACRO ERROR"}
+
+    def __init__(self, code=None):
+        super().__init__("코레일 서버가 자동화 요청을 차단했습니다. 잠시 후 다시 시도해 주세요.", code)
+
+
 class NetFunnelError(Exception):
     def __init__(self, msg):
         self.msg = msg
@@ -525,6 +533,8 @@ class Korail:
         self.name = None
         self.email = None
         self.phone_number = None
+        # NetFunnel 헬퍼 (열차 조회 시 Sid 파라미터에 사용)
+        self._netfunnel = NetFunnelHelper()
         if auto_login:
             self.login(korail_id, korail_pw)
 
@@ -601,7 +611,7 @@ class Korail:
         if j.get("strResult") == "FAIL":
             h_msg_cd = j.get("h_msg_cd")
             h_msg_txt = j.get("h_msg_txt")
-            for error in (NoResultsError, NeedToLoginError, SoldOutError):
+            for error in (NoResultsError, NeedToLoginError, SoldOutError, MacroError):
                 if h_msg_cd in error.codes:
                     raise error(h_msg_cd)
             raise KorailError(h_msg_txt, h_msg_cd)
@@ -641,10 +651,17 @@ class Korail:
             ),
         }
 
+        # NetFunnel 키 획득 (매크로 차단 우회)
+        try:
+            netfunnel_key = self._netfunnel.run()
+        except Exception as e:
+            self._log(f"NetFunnel 키 획득 실패 (무시): {e}")
+            netfunnel_key = ""
+
         data = {
             "Device": self._device,
             "Version": self._version,
-            "Sid": "",
+            "Sid": netfunnel_key or "",
             "txtMenuId": "11",
             "radJobId": "1",
             "selGoTrain": train_type,

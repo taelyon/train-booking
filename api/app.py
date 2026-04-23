@@ -12,7 +12,7 @@ import ktx
 from dotenv import load_dotenv
 
 from srt import SRTResponseError, SRTLoginError, SRTError
-from ktx import SoldOutError, KorailError, TrainType, NoResultsError
+from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError
 
 load_dotenv()
 app = Flask(__name__)
@@ -142,6 +142,10 @@ def search():
         # 오류 대신, 비어있는 trains 리스트를 포함한 정상 응답(200)을 보냅니다.
         app.logger.info(f"No train results: {e}") # 서버 로그에는 정보로 남김
         return jsonify(response_data)
+    except MacroError as e:
+        # 코레일 매크로 차단 에러 처리
+        app.logger.warning(f"KTX MacroError: {e}")
+        return jsonify({'error': str(e), 'error_code': 'MACRO_ERROR'}), 503
     except Exception as e:
         # 그 외 예상치 못한 다른 모든 오류는 500 오류로 처리합니다.
         app.logger.error(f"An unexpected error occurred: {e}", exc_info=True)
@@ -200,6 +204,8 @@ def reserve():
 
     except (SRTLoginError) as e:
         return jsonify({'error_message': f'로그인 실패: {e}'}), 401
+    except MacroError as e:
+        return jsonify({'error_message': f'코레일 서버 차단: {e}', 'error_code': 'MACRO_ERROR'}), 503
     except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
         msg = str(e)
         if "잔여석없음" in msg or "Sold out" in msg or "매진" in msg:
@@ -256,6 +262,8 @@ def auto_retry():
         if "잔여석없음" in msg or "Sold out" in msg or "매진" in msg:
             return jsonify({'retry': True, 'message': '매진. 5초 후 재시도합니다.'})
         return jsonify({'error_message': msg}), 500
+    except MacroError as e:
+        return jsonify({'error_message': f'코레일 서버 차단: {e}', 'error_code': 'MACRO_ERROR'}), 503
     except Exception as e: return jsonify({'error_message': str(e)}), 500
 
 @app.route('/api/reservations')
