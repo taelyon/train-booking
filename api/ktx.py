@@ -29,6 +29,8 @@ DEFAULT_HEADERS = {
     "Host": "smart.letskorail.com",
     "Connection": "Keep-Alive",
     "Accept-Encoding": "gzip",
+    "X-Requested-With": "com.korail.mobile",
+    "Accept-Language": "ko-KR,en-US;q=0.9",
 }
 
 KORAIL_MOBILE = "https://smart.letskorail.com:443/classes/com.korail.mobile"
@@ -524,8 +526,9 @@ class Korail:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "260101001" # 2026년 기준 버전 업데이트
-        self._device_id = str(uuid.uuid4()) # 기기 고유 ID 생성
+        self._version = "250601002" # 가장 안정적인 버전으로 롤백
+        self._device_id = str(uuid.uuid4())
+        self._machine_id = str(uuid.uuid4()) # 머신 ID 추가
         self._key = "korail1234567890"
         self._idx = None
         self.korail_id = korail_id
@@ -668,7 +671,8 @@ class Korail:
             "Device": self._device,
             "Version": self._version,
             "Sid": netfunnel_key or "",
-            "txtDeviceId": self._device_id, # 기기 ID 추가
+            "txtDeviceId": self._device_id,
+            "txtMachineID": self._machine_id, # 머신 ID 추가
             "txtMenuId": "11",
             "radJobId": "1",
             "selGoTrain": train_type,
