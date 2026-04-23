@@ -9,6 +9,8 @@ import itertools
 import json
 import re
 import time
+import uuid
+import random
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from datetime import datetime, timedelta
@@ -522,7 +524,8 @@ class Korail:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "250601002"
+        self._version = "260101001" # 2026년 기준 버전 업데이트
+        self._device_id = str(uuid.uuid4()) # 기기 고유 ID 생성
         self._key = "korail1234567890"
         self._idx = None
         self.korail_id = korail_id
@@ -628,6 +631,9 @@ class Korail:
         include_no_seats=False,
         include_waiting_list=False,
     ):
+        # 매크로 탐지 회피를 위한 랜덤 지연 (0.5초 ~ 1.2초)
+        time.sleep(random.uniform(0.5, 1.2))
+
         kst_now = datetime.now() + timedelta(hours=9)
         date = date or kst_now.strftime("%Y%m%d")
         time = time or kst_now.strftime("%H%M%S")
@@ -662,6 +668,7 @@ class Korail:
             "Device": self._device,
             "Version": self._version,
             "Sid": netfunnel_key or "",
+            "txtDeviceId": self._device_id, # 기기 ID 추가
             "txtMenuId": "11",
             "radJobId": "1",
             "selGoTrain": train_type,
