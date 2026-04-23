@@ -8,7 +8,7 @@ except ImportError:
 import itertools
 import json
 import re
-import time
+import time as time_mod
 import uuid
 import random
 from Crypto.Cipher import AES
@@ -632,7 +632,7 @@ class Korail:
         include_waiting_list=False,
     ):
         # 매크로 탐지 회피를 위한 랜덤 지연 (0.5초 ~ 1.2초)
-        time.sleep(random.uniform(0.5, 1.2))
+        time_mod.sleep(random.uniform(0.5, 1.2))
 
         kst_now = datetime.now() + timedelta(hours=9)
         date = date or kst_now.strftime("%Y%m%d")
