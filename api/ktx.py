@@ -19,7 +19,7 @@ from functools import reduce
 EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
 PHONE_NUMBER_REGEX = re.compile(r"(\d{3})-(\d{3,4})-(\d{4})")
 
-USER_AGENT = "Dalvik/2.1.0 (Linux; U; Android 14; SM-S912N Build/UP1A.231005.007)"
+USER_AGENT = "Dalvik/2.1.0 (Linux; U; Android 15; SM-S928N Build/AP3A.240905.015.A2)"
 
 DEFAULT_HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -514,7 +514,7 @@ class Korail:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "240531001"
+        self._version = "250601002"
         self._key = "korail1234567890"
         self._idx = None
         self.korail_id = korail_id
