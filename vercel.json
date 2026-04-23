@@ -1,31 +1,21 @@
 {
-  "builds": [
-    {
-      "src": "api/app.py",
-      "use": "@vercel/python",
-      "config": {
-        "includeFiles": ["api/*.py"]
-      }
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
+  "functions": {
+    "api/app.py": {
+      "runtime": "python3.12",
+      "includeFiles": "api/*.py",
+      "regions": ["icn1"]
     }
-  ],
-  "routes": [
+  },
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/app.py"
+      "source": "/api/(.*)",
+      "destination": "/api/app.py"
     },
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }
