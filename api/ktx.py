@@ -5,6 +5,8 @@ try:
 except ImportError:
     import requests
     HAS_CURL_CFFI = False
+
+print(f"[시작] curl_cffi 사용 여부: {HAS_CURL_CFFI}" + (" (Chrome TLS 위장 활성화)" if HAS_CURL_CFFI else " (requests 폴백 - 매크로 탐지 위험!)"))
 import itertools
 import json
 import re
@@ -521,12 +523,13 @@ class Korail:
 
     def __init__(self, korail_id, korail_pw, auto_login=True, verbose=False):
         if HAS_CURL_CFFI:
-            self._session = curl_cffi.Session(impersonate="chrome131_android")
+            # impersonate 없이 사용 - Dalvik UA와 TLS 핑거프린트 일관성 유지
+            self._session = curl_cffi.Session()
         else:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "260417001" # 2026년 4월 최신 버전으로 업데이트
+        self._version = "250601002" # 검색 등 일반 API 호출용 버전
         self._device_id = str(uuid.uuid4())
         self._machine_id = str(uuid.uuid4()) # 머신 ID 추가
         self._key = "korail1234567890"
@@ -582,8 +585,7 @@ class Korail:
 
         data = {
             "Device": self._device,
-            "Version": self._version,
-            "Key": self._key,
+            "Version": "231231001",  # 로그인에만 사용하는 특수 버전 (korail2 레퍼런스 참고)
             "txtMemberNo": self.korail_id,
             "txtPwd": self.__enc_password(self.korail_pw),
             "txtInputFlg": txt_input_flg,
@@ -595,7 +597,7 @@ class Korail:
         j = json.loads(r.text)
 
         if j["strResult"] == "SUCC" and j.get("strMbCrdNo"):
-            # self._key = j['Key']
+            self._key = j['Key'] # 서버에서 발급한 Key를 저장하여 이후 API 호출에 사용
             self.membership_number = j["strMbCrdNo"]
             self.name = j["strCustNm"]
             self.email = j["strEmailAdr"]
@@ -604,6 +606,8 @@ class Korail:
                 f"로그인 성공: {self.name} (멤버십번호: {self.membership_number}, 전화번호: {self.phone_number})"
             )
             self.logined = True
+            # 로그인 직후 연속 요청 패턴을 피하기 위한 랜덤 지연
+            time_mod.sleep(random.uniform(0.8, 1.5))
             return True
         
         self.logined = False
@@ -621,6 +625,8 @@ class Korail:
         if j.get("strResult") == "FAIL":
             h_msg_cd = j.get("h_msg_cd")
             h_msg_txt = j.get("h_msg_txt")
+            # 디버그: 서버 응답 원문 출력
+            print(f"[KTX 서버 응답] 코드={h_msg_cd}, 메시지={h_msg_txt}")
             for error in (NoResultsError, NeedToLoginError, SoldOutError, MacroError):
                 if h_msg_cd in error.codes:
                     raise error(h_msg_cd)
