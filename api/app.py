@@ -208,8 +208,9 @@ def reserve():
         return jsonify({'error_message': f'코레일 서버 차단: {e}', 'error_code': 'MACRO_ERROR'}), 503
     except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
         msg = str(e)
-        if "잔여석없음" in msg or "Sold out" in msg or "매진" in msg:
-            return jsonify({'retry': True, 'message': '매진. 5초 후 재시도합니다.'})
+        # 매진뿐만 아니라 예약대기 한도 초과 시에도 멈추지 않고 계속 재시도하도록 수정
+        if any(keyword in msg for keyword in ["잔여석없음", "Sold out", "매진", "한도수 초과", "예약대기"]):
+            return jsonify({'retry': True, 'message': '매진 또는 예약대기 한도 초과. 5초 후 재시도합니다.'})
         if isinstance(e, KorailError):
             return jsonify({'error_message': f'오류: {e}'}), 401
         return jsonify({'error_message': msg}), 500
@@ -259,8 +260,9 @@ def auto_retry():
 
     except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
         msg = str(e)
-        if "잔여석없음" in msg or "Sold out" in msg or "매진" in msg:
-            return jsonify({'retry': True, 'message': '매진. 5초 후 재시도합니다.'})
+        # 매진뿐만 아니라 예약대기 한도 초과 시에도 멈추지 않고 계속 재시도하도록 수정
+        if any(keyword in msg for keyword in ["잔여석없음", "Sold out", "매진", "한도수 초과", "예약대기"]):
+            return jsonify({'retry': True, 'message': '매진 또는 예약대기 한도 초과. 5초 후 재시도합니다.'})
         return jsonify({'error_message': msg}), 500
     except MacroError as e:
         return jsonify({'error_message': f'코레일 서버 차단: {e}', 'error_code': 'MACRO_ERROR'}), 503
