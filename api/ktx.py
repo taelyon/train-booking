@@ -605,8 +605,12 @@ class Korail:
             )
             self.logined = True
             return True
+        
         self.logined = False
-        return False
+        # 로그인 실패 시 서버가 보내준 구체적인 에러 메시지를 포함하여 예외 발생
+        error_msg = j.get("strErrMsg") or j.get("h_msg_txt") or "로그인 정보가 올바르지 않습니다."
+        error_code = j.get("strResult") or j.get("h_msg_cd")
+        raise KorailError(error_msg, error_code)
 
     def logout(self):
         r = self._session.get(API_ENDPOINTS["logout"])
