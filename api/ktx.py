@@ -17,7 +17,119 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from datetime import datetime, timedelta
 from functools import reduce
+import string
 
+DYNAPATH_PATHS = [
+    "/classes/com.korail.mobile.certification.TicketReservation",
+    "/classes/com.korail.mobile.nonMember.NonMemTicket",
+    "/classes/com.korail.mobile.seatMovie.ScheduleView",
+    "/classes/com.korail.mobile.seatMovie.ScheduleViewSpecial",
+    "/classes/com.korail.mobile.trn.prcFare.do",
+    "/classes/com.korail.mobile.login.Login"
+]
+
+class DynaPathMasterEngine:
+    APP_ID = "com.korail.talk"
+    AS_VALUE = "%5B38ff229cb34c7dda8e28220a2d750cce%5D"
+    DEVICE_MODEL = "SM-S928N"
+    OS_TYPE = "Android"
+    SDK_VERSION = "v1"
+
+    def __init__(self):
+        self.TABLE = "3FE9jgRD4KdCyuawklqGJYmvfMn15P7US8XbxeLQtWT6OicBAopINs2Vh0HZrz"
+        self.I8, self.I9, self.I10 = 161, 30, 2
+        self.app_start_ts = str(int(time_mod.time() * 1000))
+
+    def string2xA1s(self, data_str):
+        result = []
+        i = 0
+        while i < len(data_str):
+            cp = ord(data_str[i])
+            i += 1
+            if cp < 128: result.append(cp)
+            elif cp < 2048:
+                result.append(128 | ((cp >> 7) & 15))
+                result.append(cp & 127)
+            elif cp >= 262144:
+                result.append(160)
+                result.append((cp >> 14) & 127)
+                result.append((cp >> 7) & 127)
+                result.append(cp & 127)
+            elif (63488 & cp) != 55296:
+                result.append(((cp >> 14) & 15) | 144)
+                result.append((cp >> 7) & 127)
+                result.append(cp & 127)
+        return result
+
+    def make_key(self, key_str):
+        big_int_add = 0
+        for char in key_str:
+            cp = ord(char)
+            i9_bit = 32768
+            for _ in range(16):
+                if (i9_bit & cp) != 0: break
+                i9_bit >>= 1
+            big_int_add = (big_int_add * (i9_bit << 1)) + cp
+        return big_int_add
+
+    def _internal_i(self, base_table, remainder, encode_size, current_sb):
+        j8_count = 0
+        for k in range(len(base_table)):
+            char = base_table[k]
+            if char not in current_sb:
+                if j8_count == remainder: return char
+                j8_count += 1
+        return ' '
+
+    def make_encode_table(self, num, encode_size, base_table):
+        sb = ""
+        temp_num = num
+        for i in range(encode_size):
+            j8_divisor = encode_size - i
+            remainder = temp_num % j8_divisor
+            char = self._internal_i(base_table, remainder, len(base_table), sb)
+            sb += char
+            temp_num //= j8_divisor
+        return sb
+
+    def encode_normal_be(self, data_str, table, i8=161, i9=30, i10=2):
+        list_data = self.string2xA1s(data_str)
+        sb, i_arr = [], [0] * (i10 + 1)
+        idx, size = 0, len(list_data) % i10
+        size2 = len(list_data) - size
+        while idx < size2:
+            val = 0
+            for _ in range(i10):
+                val = (val * i8) + list_data[idx]
+                idx += 1
+            for i in range(i10 + 1):
+                i_arr[i] = val % i9
+                val //= i9
+            for i in range(i10, -1, -1): sb.append(table[i_arr[i]])
+        if size > 0:
+            val = 0
+            for _ in range(size):
+                val = (val * i8) + list_data[idx]
+                idx += 1
+            for i in range(size + 1):
+                i_arr[i] = val % i9
+                val //= i9
+            while size >= 0:
+                sb.append(table[i_arr[size]])
+                size -= 1
+        return "".join(sb)
+
+    def generate_token(self, device_id, ts, rand):
+        plaintext = (f"ai={self.APP_ID}&di={device_id}&as={self.AS_VALUE}&"
+                     f"su=false&dbg=false&emu=false&hk=false&it={self.app_start_ts}&"
+                     f"ts={ts}&rt=0&os=13&dm={self.DEVICE_MODEL}&st={self.OS_TYPE}&sv={self.SDK_VERSION}")
+        
+        dyn_key = f"v1+{rand}+{ts}"
+        key_enc = self.encode_normal_be(dyn_key, self.TABLE, self.I8, self.I9, self.I10)
+        big_key = self.make_key(dyn_key)
+        custom_table = self.make_encode_table(big_key, self.I9, self.TABLE)
+        body_enc = self.encode_normal_be(plaintext, custom_table, self.I8, self.I9, self.I10)
+        return f"bEeEP{self.TABLE[len(key_enc)]}{key_enc}{body_enc}"
 
 # Constants
 EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
@@ -529,11 +641,13 @@ class Korail:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "250601002" # 검색 등 일반 API 호출용 버전
-        self._device_id = str(uuid.uuid4())
-        self._machine_id = str(uuid.uuid4()) # 머신 ID 추가
+        self._version = "250601002"
+        self._sid_key = b"2485dd54d9deaa36"
+        self._device_id = "558a4f02041657ea"
+        self._machine_id = str(uuid.uuid4())
         self._key = "korail1234567890"
         self._idx = None
+        self._engine = DynaPathMasterEngine()
         self.korail_id = korail_id
         self.korail_pw = korail_pw
         self.verbose = verbose
@@ -542,6 +656,22 @@ class Korail:
         self.name = None
         self.email = None
         self.phone_number = None
+
+    def _generate_sid(self, ts):
+        plaintext = (f"{self._device}{ts}").encode('utf-8')
+        cipher = AES.new(self._sid_key, AES.MODE_CBC, iv=self._sid_key)
+        return base64.b64encode(cipher.encrypt(pad(plaintext, 16))).decode('utf-8') + "\n"
+
+    def _get_auth_headers_and_sid(self, url):
+        headers = {}
+        sid = None
+        if any(path in url for path in DYNAPATH_PATHS):
+            ts = int(time_mod.time() * 1000)
+            rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            token = self._engine.generate_token(self._device_id, ts, rand)
+            headers['x-dynapath-m-token'] = token
+            sid = self._generate_sid(ts)
+        return headers, sid
         # NetFunnel 헬퍼 (열차 조회 시 Sid 파라미터에 사용)
         self._netfunnel = NetFunnelHelper()
         if auto_login:
@@ -583,6 +713,8 @@ class Korail:
             else "2"
         )
 
+        url = API_ENDPOINTS["login"]
+        headers, sid = self._get_auth_headers_and_sid(url)
         data = {
             "Device": self._device,
             "Version": "231231001",  # 로그인에만 사용하는 특수 버전 (korail2 레퍼런스 참고)
@@ -591,8 +723,10 @@ class Korail:
             "txtInputFlg": txt_input_flg,
             "idx": self._idx,
         }
+        if sid:
+            data['Sid'] = sid
 
-        r = self._session.post(API_ENDPOINTS["login"], data=data)
+        r = self._session.post(url, data=data, headers=headers)
         self._log(r.text)
         j = json.loads(r.text)
 
@@ -679,6 +813,9 @@ class Korail:
             self._log(f"NetFunnel 키 획득 실패 (무시): {e}")
             netfunnel_key = ""
 
+        url = API_ENDPOINTS["search_schedule"]
+        headers, sid = self._get_auth_headers_and_sid(url)
+
         data = {
             "Device": self._device,
             "Version": self._version,
@@ -707,8 +844,10 @@ class Korail:
             "adjStnScdlOfrFlg": "N",  # 인접역 보기
             "mbCrdNo": self.membership_number,
         }
+        if sid:
+            data["Sid"] = sid
 
-        r = self._session.get(API_ENDPOINTS["search_schedule"], params=data)
+        r = self._session.post(url, params=data, headers=headers)
         self._log(r.text)
         j = json.loads(r.text)
 
@@ -750,6 +889,9 @@ class Korail:
         passengers = passengers or [AdultPassenger()]
         passengers = Passenger.reduce(passengers)
         cnt = sum(p.count for p in passengers)
+
+        url = API_ENDPOINTS["reserve"]
+        headers, sid = self._get_auth_headers_and_sid(url)
 
         data = {
             "Device": self._device,
@@ -796,7 +938,10 @@ class Korail:
         for i, psg in enumerate(passengers, 1):
             data.update(psg.get_dict(i))
 
-        r = self._session.get(API_ENDPOINTS["reserve"], params=data)
+        if sid:
+            data["Sid"] = sid
+
+        r = self._session.get(url, params=data, headers=headers)
         self._log(r.text)
         j = json.loads(r.text)
         if self._result_check(j):
