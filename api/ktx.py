@@ -381,7 +381,7 @@ class NeedToLoginError(KorailError):
 
 
 class NoResultsError(KorailError):
-    codes = {"P100", "WRG000000", "WRD000061", "WRT300005"}
+    codes = {"P100", "WRG000000", "WRD000061", "WRT300005", "WRD000010", "WRT000001"}
 
     def __init__(self, code=None):
         super().__init__("No Results", code)
@@ -526,7 +526,7 @@ class Korail:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
         self._device = "AD"
-        self._version = "250601002" # 가장 안정적인 버전으로 롤백
+        self._version = "260417001" # 2026년 4월 최신 버전으로 업데이트
         self._device_id = str(uuid.uuid4())
         self._machine_id = str(uuid.uuid4()) # 머신 ID 추가
         self._key = "korail1234567890"
@@ -620,6 +620,8 @@ class Korail:
             for error in (NoResultsError, NeedToLoginError, SoldOutError, MacroError):
                 if h_msg_cd in error.codes:
                     raise error(h_msg_cd)
+            if "조회된 내역이 없습니다" in h_msg_txt or "발권한 승차권이 없습니다" in h_msg_txt:
+                raise NoResultsError(h_msg_cd)
             raise KorailError(h_msg_txt, h_msg_cd)
         return True
 

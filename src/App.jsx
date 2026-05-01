@@ -741,7 +741,7 @@ function ReservationsView({ reservations, onCancel, onPay, isLoading }) {
             return (
                  <div className="mb-8">
                     <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
-                    <p className="text-red-500 p-4 bg-red-50 rounded-lg">{type} 예매 내역을 불러오는 중 오류가 발생했습니다.</p>
+                    <p className="text-red-500 p-4 bg-red-50 rounded-lg">{type}: {error}</p>
                  </div>
             );
         }
