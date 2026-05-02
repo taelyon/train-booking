@@ -656,6 +656,10 @@ class Korail:
         self.name = None
         self.email = None
         self.phone_number = None
+        # NetFunnel 헬퍼 (열차 조회 시 Sid 파라미터에 사용)
+        self._netfunnel = NetFunnelHelper()
+        if auto_login:
+            self.login(korail_id, korail_pw)
 
     def _generate_sid(self, ts):
         plaintext = (f"{self._device}{ts}").encode('utf-8')
@@ -672,10 +676,6 @@ class Korail:
             headers['x-dynapath-m-token'] = token
             sid = self._generate_sid(ts)
         return headers, sid
-        # NetFunnel 헬퍼 (열차 조회 시 Sid 파라미터에 사용)
-        self._netfunnel = NetFunnelHelper()
-        if auto_login:
-            self.login(korail_id, korail_pw)
 
     def _log(self, msg: str) -> None:
         if self.verbose:
@@ -717,7 +717,7 @@ class Korail:
         headers, sid = self._get_auth_headers_and_sid(url)
         data = {
             "Device": self._device,
-            "Version": "231231001",  # 로그인에만 사용하는 특수 버전 (korail2 레퍼런스 참고)
+            "Version": self._version,
             "txtMemberNo": self.korail_id,
             "txtPwd": self.__enc_password(self.korail_pw),
             "txtInputFlg": txt_input_flg,

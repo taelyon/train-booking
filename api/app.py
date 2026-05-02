@@ -311,6 +311,7 @@ def auto_retry():
 
     except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
         msg = str(e)
+        app.logger.error(f"Reserve failed: {msg}")
         # 매진뿐만 아니라 예약대기 한도 초과 시에도 멈추지 않고 계속 재시도하도록 수정
         if any(keyword in msg for keyword in ["잔여석없음", "Sold out", "매진", "한도수 초과", "예약대기"]):
             return jsonify({'retry': True, 'message': '매진 또는 예약대기 한도 초과. 5초 후 재시도합니다.'})
@@ -328,9 +329,20 @@ def reservations():
     except Exception as e: results['srt_error'] = str(e)
     try:
         client = get_ktx_client()
-        raw = client.tickets() + client.reservations()
+        raw = []
+        try:
+            raw.extend(client.tickets())
+        except Exception as e:
+            app.logger.warning(f"Failed to fetch KTX tickets (might be deprecated or need login): {e}")
+        try:
+            raw.extend(client.reservations())
+        except Exception as e:
+            app.logger.warning(f"Failed to fetch KTX reservations: {e}")
+            results['ktx_error'] = str(e)
+        
         results['ktx_reservations'] = [r.to_dict() for r in raw]
-    except Exception as e: results['ktx_error'] = str(e)
+    except Exception as e: 
+        results['ktx_error'] = str(e)
     return jsonify(results)
 
 @app.route('/api/pay', methods=['POST'])
