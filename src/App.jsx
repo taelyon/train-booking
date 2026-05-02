@@ -430,11 +430,22 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
 
     // 출발 시간 기본값으로 5분을 더합니다.
     const kstNowWithBuffer = new Date(kstTime.getTime() + 5 * 60 * 1000);
-
-    // KST 기준 시간에서 시와 분을 추출합니다.
     const hours = kstNowWithBuffer.getUTCHours().toString().padStart(2, '0');
     const minutes = kstNowWithBuffer.getUTCMinutes().toString().padStart(2, '0');
     const currentTime = `${hours}:${minutes}`;
+
+    const [selectedDate, setSelectedDate] = useState(today);
+    const [selectedTime, setSelectedTime] = useState(currentTime);
+
+    const handleDateChange = (e) => {
+        const newDate = e.target.value;
+        setSelectedDate(newDate);
+        if (newDate !== today) {
+            setSelectedTime('00:00');
+        } else {
+            setSelectedTime(currentTime);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -464,14 +475,16 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                             <input 
                                 type="date" 
                                 name="date" 
-                                defaultValue={today} 
+                                value={selectedDate}
+                                onChange={handleDateChange}
                                 required 
                                 className="flex-1 min-w-0 px-3 py-2 border-r border-slate-300 focus:outline-none bg-white" 
                             />
                             <input 
                                 type="time" 
                                 name="time" 
-                                defaultValue={currentTime} 
+                                value={selectedTime}
+                                onChange={(e) => setSelectedTime(e.target.value)}
                                 required 
                                 className="flex-1 min-w-0 px-3 py-2 focus:outline-none bg-white" 
                             />

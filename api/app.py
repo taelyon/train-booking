@@ -175,21 +175,58 @@ def search():
     }
 
     try:
-        trains = []
-        if train_type == 'SRT':
-            srt_client = get_srt_search_client()
-            trains = srt_client.search_train(
-                dep=dep_station, arr=arr_station, date=date_str, time=time_str, available_only=False
-            )
-        elif train_type == 'KTX':
-            ktx_client = get_ktx_search_client()
-            trains = ktx_client.search_train(
-                dep=dep_station, arr=arr_station, date=date_str, time=time_str,
-                include_no_seats=True,
-                train_type=ktx.TrainType.KTX
-            )
+        all_trains = []
+        seen_train_nos = set()
+        current_time = time_str
 
-        response_data['trains'] = [train.to_dict() for train in trains]
+        while True:
+            trains_page = []
+            try:
+                if train_type == 'SRT':
+                    srt_client = get_srt_search_client()
+                    trains_page = srt_client.search_train(
+                        dep=dep_station, arr=arr_station, date=date_str, time=current_time, available_only=False
+                    )
+                elif train_type == 'KTX':
+                    ktx_client = get_ktx_search_client()
+                    trains_page = ktx_client.search_train(
+                        dep=dep_station, arr=arr_station, date=date_str, time=current_time,
+                        include_no_seats=True,
+                        train_type=ktx.TrainType.KTX
+                    )
+            except (SRTResponseError, NoResultsError) as e:
+                # No more trains for the day
+                break
+
+            new_trains = []
+            for t in trains_page:
+                t_no = t.train_number if train_type == 'SRT' else t.train_no
+                t_date = t.dep_date if train_type == 'SRT' else t.dep_date
+                if t_date != date_str:
+                    continue
+                if t_no not in seen_train_nos:
+                    seen_train_nos.add(t_no)
+                    new_trains.append(t)
+            
+            if not new_trains:
+                break
+                
+            all_trains.extend(new_trains)
+            
+            last_train = new_trains[-1]
+            if last_train.dep_time >= "235000":
+                break
+                
+            hh = int(last_train.dep_time[:2])
+            mm = int(last_train.dep_time[2:4])
+            ss = int(last_train.dep_time[4:])
+            mm += 1
+            if mm >= 60:
+                hh += 1
+                mm -= 60
+            current_time = f"{hh:02d}{mm:02d}{ss:02d}"
+
+        response_data['trains'] = [train.to_dict() for train in all_trains]
         return jsonify(response_data)
 
     except (SRTResponseError, NoResultsError) as e:
