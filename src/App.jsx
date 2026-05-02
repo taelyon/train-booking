@@ -1092,10 +1092,23 @@ function SettingsScreen() {
                     {message}
                 </div>
             )}
-            
-            <p className="text-xs text-slate-400 text-center px-4">
-                * 입력하신 계정 정보는 브라우저의 안전한 저장소(LocalStorage)에만 보관되며, 예매 시에만 서버로 전달됩니다.
-            </p>
+
+            <div className="bg-slate-100 rounded-xl p-6 space-y-4">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2">
+                    🖥️ PC 실행 가이드
+                </h2>
+                <div className="text-sm text-slate-600 space-y-2 leading-relaxed">
+                    <p>1. <strong>백엔드 서버:</strong> <code>api</code> 폴더로 이동 후 명령어를 실행하세요.</p>
+                    <code className="block bg-slate-200 p-2 rounded text-xs">cd api && python -m flask run --port 5001</code>
+                    <p>2. <strong>프론트엔드:</strong> <code>루트(최상위)</code> 폴더에서 명령어를 실행하세요.</p>
+                    <code className="block bg-slate-200 p-2 rounded text-xs">npm run dev</code>
+                    <p>3. <strong>브라우저 접속:</strong> <code className="text-blue-600 font-bold">http://localhost:5173</code>으로 접속하여 사용하세요.</p>
+                    <hr className="border-slate-200 my-2" />
+                    <p className="text-xs text-slate-500">
+                        * 코레일 보안 정책상 외부 클라우드 IP는 차단될 확률이 높으므로, 가급적 개인 PC 환경에서 실행하는 것이 가장 안정적입니다.
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }
