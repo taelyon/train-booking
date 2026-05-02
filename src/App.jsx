@@ -90,7 +90,7 @@ export default function App() {
     return (
         <div className="bg-slate-50 font-sans flex justify-center items-start">
             <div className="w-full max-w-md bg-white min-h-screen shadow-lg flex flex-col">
-                <main className="flex-grow p-4 pb-24">
+                <main className="flex-grow p-4 pb-28">
                     <div className={activeTab === 'search' ? '' : 'hidden'}>
                         <SearchAndBookingFlow />
                     </div>
@@ -116,8 +116,8 @@ function BottomNav({ activeTab, setActiveTab }) {
     ];
 
     return (
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 shadow-[0_-1px_10px_rgba(0,0,0,0.05)]">
-            <div className="flex justify-around items-center h-16">
+        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 shadow-[0_-1px_20px_rgba(0,0,0,0.08)] z-50">
+            <div className="flex justify-around items-center h-20">
                 {navItems.map(item => {
                     const isActive = activeTab === item.id;
                     return (
