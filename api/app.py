@@ -27,31 +27,45 @@ _cached_clients = {
 }
 _CLIENT_TTL = 600  # 10분간 세션 유지
 
-def get_srt_client(force_login=False):
+def get_srt_client(force_login=False, user_id=None, user_pw=None):
     """SRT 클라이언트를 캐싱하여 반복 로그인을 방지합니다."""
     cache = _cached_clients['srt']
     now = _time.time()
-    if not force_login and cache['client'] and (now - cache['login_time']) < _CLIENT_TTL:
+    
+    # 전달받은 아이디/비번이 없으면 환경변수 사용
+    final_id = user_id or os.environ.get('SRT_ID')
+    final_pw = user_pw or os.environ.get('SRT_PW')
+
+    # 캐시된 클라이언트가 있고, 아이디가 같고, 시간이 유효하면 캐시 반환
+    if not force_login and cache['client'] and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
         return cache['client']
-    srt_id, srt_pw = os.environ.get('SRT_ID'), os.environ.get('SRT_PW')
-    if not (srt_id and srt_pw):
-        raise ValueError("SRT 로그인 정보가 서버에 설정되지 않았습니다.")
-    client = srt.SRT(srt_id, srt_pw)
+    
+    if not (final_id and final_pw):
+        raise ValueError("SRT 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
+    
+    client = srt.SRT(final_id, final_pw)
     cache['client'] = client
+    cache['id'] = final_id
     cache['login_time'] = now
     return client
 
-def get_ktx_client(force_login=False):
+def get_ktx_client(force_login=False, user_id=None, user_pw=None):
     """KTX(코레일) 클라이언트를 캐싱하여 반복 로그인을 방지합니다."""
     cache = _cached_clients['ktx']
     now = _time.time()
-    if not force_login and cache['client'] and cache['client'].logined and (now - cache['login_time']) < _CLIENT_TTL:
+
+    final_id = user_id or os.environ.get('KTX_ID')
+    final_pw = user_pw or os.environ.get('KTX_PW')
+
+    if not force_login and cache['client'] and cache['client'].logined and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
         return cache['client']
-    ktx_id, ktx_pw = os.environ.get('KTX_ID'), os.environ.get('KTX_PW')
-    if not (ktx_id and ktx_pw):
-        raise ValueError("KTX 로그인 정보가 서버에 설정되지 않았습니다.")
-    client = ktx.Korail(ktx_id, ktx_pw)
+    
+    if not (final_id and final_pw):
+        raise ValueError("KTX 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
+    
+    client = ktx.Korail(final_id, final_pw)
     cache['client'] = client
+    cache['id'] = final_id
     cache['login_time'] = now
     return client
 
@@ -126,6 +140,15 @@ def vapid_public_key():
         return "VAPID public key not configured.", 500
     return public_key
 
+@app.route('/api/config')
+def get_config():
+    return jsonify({
+        'ktxId': os.environ.get('KTX_ID', ''),
+        'ktxPw': os.environ.get('KTX_PW', ''),
+        'srtId': os.environ.get('SRT_ID', ''),
+        'srtPw': os.environ.get('SRT_PW', '')
+    })
+
 @app.route('/api/subscribe', methods=['POST'])
 def subscribe():
     global push_subscription
@@ -155,6 +178,15 @@ def send_push_notification(title, body):
     except Exception as e:
         app.logger.error(f"An error occurred while sending push notification: {e}")
 
+def get_auth_from_headers():
+    """헤더에서 KTX/SRT 계정 정보를 추출합니다."""
+    return {
+        'ktx_id': request.headers.get('X-KTX-ID'),
+        'ktx_pw': request.headers.get('X-KTX-PW'),
+        'srt_id': request.headers.get('X-SRT-ID'),
+        'srt_pw': request.headers.get('X-SRT-PW')
+    }
+
 @app.route('/api/search')
 def search():
     train_type = request.args.get('type')
@@ -162,6 +194,8 @@ def search():
     arr_station = request.args.get('arr')
     date_str = request.args.get('date').replace('-', '')
     time_str = request.args.get('time').replace(':', '') + '00'
+
+    auth = get_auth_from_headers()
 
     # 프론트엔드로 보낼 기본 데이터 구조
     response_data = {
@@ -266,14 +300,15 @@ def reserve():
 
         client, passengers, reserve_option, all_trains = (None, [], None, [])
 
+        auth = get_auth_from_headers()
         if train_type == 'SRT':
-            client = get_srt_client()
+            client = get_srt_client(user_id=auth['srt_id'], user_pw=auth['srt_pw'])
             all_trains = client.search_train(dep=dep_station, arr=arr_station, date=date_str, time=time_str, available_only=False)
             passengers = [srt.Adult(adults)]
             reserve_option = srt.SeatType.GENERAL_ONLY if seat_type == 'GENERAL' else srt.SeatType.SPECIAL_ONLY
 
         elif train_type == 'KTX':
-            client = get_ktx_client()
+            client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
             all_trains = client.search_train(dep=dep_station, arr=arr_station, date=date_str, time=time_str, include_no_seats=True, train_type=ktx.TrainType.KTX)
             passengers = [ktx.AdultPassenger(adults)]
             reserve_option = ktx.ReserveOption.GENERAL_ONLY if seat_type == 'GENERAL' else ktx.ReserveOption.SPECIAL_ONLY
@@ -326,12 +361,13 @@ def auto_retry():
 
         client, search_options, passengers, reserve_option = (None, {}, [], None)
 
+        auth = get_auth_from_headers()
         if train_type == 'SRT':
-            client = get_srt_client()
+            client = get_srt_client(user_id=auth['srt_id'], user_pw=auth['srt_pw'])
             search_options, passengers = {'available_only': False}, [srt.Adult(adults)]
             reserve_option = srt.SeatType.GENERAL_ONLY if seat_type == 'GENERAL' else srt.SeatType.SPECIAL_ONLY
         elif train_type == 'KTX':
-            client = get_ktx_client()
+            client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
             search_options = {'include_no_seats': True, 'train_type': ktx.TrainType.KTX}
             passengers, reserve_option = [ktx.AdultPassenger(adults)], ktx.ReserveOption.GENERAL_ONLY if seat_type == 'GENERAL' else ktx.ReserveOption.SPECIAL_ONLY
 
@@ -363,12 +399,13 @@ def auto_retry():
 @app.route('/api/reservations')
 def reservations():
     results = {'srt_reservations': [], 'ktx_reservations': [], 'srt_error': None, 'ktx_error': None}
+    auth = get_auth_from_headers()
     try:
-        client = get_srt_client()
+        client = get_srt_client(user_id=auth['srt_id'], user_pw=auth['srt_pw'])
         results['srt_reservations'] = [r.to_dict() for r in client.get_reservations()]
     except Exception as e: results['srt_error'] = str(e)
     try:
-        client = get_ktx_client()
+        client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
         raw = []
         try:
             raw.extend(client.tickets())
@@ -395,8 +432,9 @@ def pay():
         if not train_type or not pnr_no:
             return jsonify({'error_message': "결제 요청에 필요한 정보가 누락되었습니다."}), 400
 
+        auth = get_auth_from_headers()
         if train_type == 'SRT':
-            client = get_srt_client()
+            client = get_srt_client(user_id=auth['srt_id'], user_pw=auth['srt_pw'])
             reservations = client.get_reservations()
             target = next((r for r in reservations if r.reservation_number == pnr_no), None)
             
@@ -413,7 +451,7 @@ def pay():
             return jsonify({'message': f"SRT 예매({pnr_no})가 정상적으로 결제되었습니다."})
 
         elif train_type == 'KTX':
-            client = get_ktx_client()
+            client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
             reservations = client.reservations()
             target = next((r for r in reservations if r.rsv_id == pnr_no), None)
 

@@ -45,6 +45,13 @@ const AlertTriangleIcon = ({ className }) => (
     </svg>
 );
 
+const SettingsIcon = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+);
+
 // --- Sound Utility ---
 const playSuccessSound = () => {
     try {
@@ -90,6 +97,9 @@ export default function App() {
                     <div className={activeTab === 'reservations' ? '' : 'hidden'}>
                         <ReservationsScreen active={activeTab === 'reservations'} />
                     </div>
+                    <div className={activeTab === 'settings' ? '' : 'hidden'}>
+                        <SettingsScreen />
+                    </div>
                 </main>
                 <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
             </div>
@@ -102,6 +112,7 @@ function BottomNav({ activeTab, setActiveTab }) {
     const navItems = [
         { id: 'search', icon: SearchIcon, label: '열차 조회' },
         { id: 'reservations', icon: TicketIcon, label: '예매 내역' },
+        { id: 'settings', icon: SettingsIcon, label: '관리' },
     ];
 
     return (
@@ -187,6 +198,16 @@ function SearchAndBookingFlow() {
         return () => clearTimeout(timer);
     }, [autoRetryData]);
 
+    const getAuthHeaders = () => {
+        const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+        return {
+            'X-KTX-ID': credentials.ktxId || '',
+            'X-KTX-PW': credentials.ktxPw || '',
+            'X-SRT-ID': credentials.srtId || '',
+            'X-SRT-PW': credentials.srtPw || ''
+        };
+    };
+
     const handleSearch = async (e) => {
         e.preventDefault();
         setIsLoading(true);
@@ -199,7 +220,9 @@ function SearchAndBookingFlow() {
         const query = new URLSearchParams(params).toString();
 
         try {
-            const response = await fetch(`/api/search?${query}`);
+            const response = await fetch(`/api/search?${query}`, {
+                headers: getAuthHeaders()
+            });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || '서버에서 오류가 발생했습니다.');
             setSearchResults(data);
@@ -233,7 +256,10 @@ function SearchAndBookingFlow() {
         try {
             const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    ...getAuthHeaders()
+                },
                 body: new URLSearchParams(body),
             });
             const result = await response.json();
@@ -303,7 +329,15 @@ function ReservationsScreen({ active }) {
         setError('');
         setMessage('');
         try {
-            const response = await fetch('/api/reservations');
+            const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+            const response = await fetch('/api/reservations', {
+                headers: {
+                    'X-KTX-ID': credentials.ktxId || '',
+                    'X-KTX-PW': credentials.ktxPw || '',
+                    'X-SRT-ID': credentials.srtId || '',
+                    'X-SRT-PW': credentials.srtPw || ''
+                }
+            });
             if(!response.ok) throw new Error('예매 내역을 불러오는데 실패했습니다.');
             const data = await response.json();
             setReservations(data);
@@ -932,6 +966,136 @@ function EmptyResults({ searchParams, onBack }) {
                     <span className="ml-2">다시 검색하기</span>
                 </button>
             </div>
+        </div>
+    );
+}
+
+function SettingsScreen() {
+    const [credentials, setCredentials] = useState({
+        ktxId: '',
+        ktxPw: '',
+        srtId: '',
+        srtPw: ''
+    });
+    const [message, setMessage] = useState('');
+
+    useEffect(() => {
+        const saved = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+        
+        const fetchDefaults = async () => {
+            try {
+                const response = await fetch('/api/config');
+                const defaults = await response.json();
+                
+                setCredentials({
+                    ktxId: saved.ktxId || defaults.ktxId || '',
+                    ktxPw: saved.ktxPw || defaults.ktxPw || '',
+                    srtId: saved.srtId || defaults.srtId || '',
+                    srtPw: saved.srtPw || defaults.srtPw || ''
+                });
+            } catch (e) {
+                console.error("Failed to fetch default config", e);
+                setCredentials({
+                    ktxId: saved.ktxId || '',
+                    ktxPw: saved.ktxPw || '',
+                    srtId: saved.srtId || '',
+                    srtPw: saved.srtPw || ''
+                });
+            }
+        };
+
+        fetchDefaults();
+    }, []);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setCredentials(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSave = () => {
+        localStorage.setItem('trainCredentials', JSON.stringify(credentials));
+        setMessage('설정이 저장되었습니다.');
+        setTimeout(() => setMessage(''), 3000);
+    };
+
+    return (
+        <div className="space-y-6">
+            <h1 className="text-2xl font-bold text-slate-800">계정 관리</h1>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-blue-600 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
+                    KTX (코레일)
+                </h2>
+                <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">멤버십 번호 / 이메일 / 전화번호</label>
+                    <input 
+                        type="text" 
+                        name="ktxId"
+                        value={credentials.ktxId}
+                        onChange={handleChange}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="아이디 입력"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">비밀번호</label>
+                    <input 
+                        type="password" 
+                        name="ktxPw"
+                        value={credentials.ktxPw}
+                        onChange={handleChange}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="비밀번호 입력"
+                    />
+                </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-purple-600 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-purple-600 rounded-full"></span>
+                    SRT (에스알)
+                </h2>
+                <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">이메일 / 회원번호 / 전화번호</label>
+                    <input 
+                        type="text" 
+                        name="srtId"
+                        value={credentials.srtId}
+                        onChange={handleChange}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="아이디 입력"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">비밀번호</label>
+                    <input 
+                        type="password" 
+                        name="srtPw"
+                        value={credentials.srtPw}
+                        onChange={handleChange}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="비밀번호 입력"
+                    />
+                </div>
+            </div>
+
+            <button 
+                onClick={handleSave}
+                className="w-full bg-slate-800 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-900 transition-colors"
+            >
+                설정 저장하기
+            </button>
+
+            {message && (
+                <div className="text-center text-green-600 font-semibold animate-bounce">
+                    {message}
+                </div>
+            )}
+            
+            <p className="text-xs text-slate-400 text-center px-4">
+                * 입력하신 계정 정보는 브라우저의 안전한 저장소(LocalStorage)에만 보관되며, 예매 시에만 서버로 전달됩니다.
+            </p>
         </div>
     );
 }
