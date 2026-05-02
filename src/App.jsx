@@ -84,7 +84,12 @@ export default function App() {
         <div className="bg-slate-50 font-sans flex justify-center items-start">
             <div className="w-full max-w-md bg-white min-h-screen shadow-lg flex flex-col">
                 <main className="flex-grow p-4 pb-24">
-                    {activeTab === 'search' ? <SearchAndBookingFlow /> : <ReservationsScreen />}
+                    <div className={activeTab === 'search' ? '' : 'hidden'}>
+                        <SearchAndBookingFlow />
+                    </div>
+                    <div className={activeTab === 'reservations' ? '' : 'hidden'}>
+                        <ReservationsScreen active={activeTab === 'reservations'} />
+                    </div>
                 </main>
                 <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
             </div>
@@ -286,7 +291,7 @@ function SearchAndBookingFlow() {
     );
 }
 
-function ReservationsScreen() {
+function ReservationsScreen({ active }) {
     const [reservations, setReservations] = useState({ srt_reservations: [], ktx_reservations: [], srt_error: null, ktx_error: null });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
@@ -310,8 +315,10 @@ function ReservationsScreen() {
     };
     
     useEffect(() => {
-        fetchReservations();
-    }, []);
+        if (active) {
+            fetchReservations();
+        }
+    }, [active]);
 
     const handleCancel = async (pnr_no, train_type, is_ticket) => {
         if (!pnr_no || !train_type) {
@@ -397,7 +404,7 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
             setDepStation(defaultStations.includes('수서') ? '수서' : defaultStations[0]);
             setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
         } else {
-            setDepStation(defaultStations.includes('서울') ? '서울' : defaultStations[0]);
+            setDepStation(defaultStations.includes('용산') ? '용산' : defaultStations[0]);
             setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
         }
     }, [trainType]);

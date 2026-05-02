@@ -208,6 +208,9 @@ def search():
                     seen_train_nos.add(t_no)
                     new_trains.append(t)
             
+            import sys
+            print(f"DEBUG: current_time={current_time}, got {len(trains_page)} trains, {len(new_trains)} new. Total={len(all_trains)+len(new_trains)}", file=sys.stderr, flush=True)
+
             if not new_trains:
                 break
                 
