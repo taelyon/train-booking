@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+.venv
+.vercel
+dist
+.env
+.env.local
+*.log
+*.txt
+*.md
+vercel.json
+issue54_patch.txt
+issues_all.txt
+patch_utf8.txt
+__pycache__
+api/__pycache__

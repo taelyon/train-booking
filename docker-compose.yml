@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  train-booking:
+    image: ghcr.io/taelyon/train-booking:latest
+    container_name: train_booking_bot
+    restart: unless-stopped
+    ports:
+      # 외부접속포트:내부포트
+      - "5001:5001"
+    volumes:
+      # 설정 및 인증 정보 보존을 위한 환경변수 파일 매핑
+      # NAS의 프로젝트 폴더 내에 .env 파일을 미리 준비해 두어야 합니다.
+      - ./.env:/app/.env
+    environment:
+      - TZ=Asia/Seoul

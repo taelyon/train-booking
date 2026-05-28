@@ -15,7 +15,7 @@ from srt import SRTResponseError, SRTLoginError, SRTError
 from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError
 
 load_dotenv()
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../dist', static_url_path='/')
 push_subscription = None
 
 # --- 클라이언트 캐싱 (매번 로그인하지 않고 세션 재사용) ---
@@ -521,3 +521,15 @@ def cancel():
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during cancellation: {e}", exc_info=True)
         return jsonify({'error_message': str(e)}), 500
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    """React SPA 라우팅을 지원하기 위해 api 경로가 아닌 모든 요청을 index.html로 서빙합니다."""
+    if path.startswith('api'):
+        return jsonify({'error': 'Not Found'}), 404
+    return app.send_static_file('index.html')
+
+if __name__ == '__main__':
+    # 시놀로지 NAS 등 외부 환경에서 접근할 수 있도록 0.0.0.0 호스트로 5001 포트에서 실행합니다.
+    app.run(host='0.0.0.0', port=5001, debug=True)

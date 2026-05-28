@@ -1,0 +1,76 @@
+name: Deploy to Synology NAS
+
+on:
+  push:
+    branches:
+      - main  # main 브랜치에 푸시될 때 배포 프로세스를 트리거합니다.
+
+# GHCR(GitHub Container Registry)에 빌드된 이미지를 기록하기 위한 권한 설정
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/taelyon/train-booking:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # docker-compose.yml 파일을 NAS의 프로젝트 경로로 안전하게 전송합니다.
+      - name: Copy docker-compose.yml to NAS via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          port: ${{ secrets.NAS_PORT }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.NAS_PROJECT_PATH }}
+          rm: false
+
+      # SSH로 NAS에 원격 접속하여 컨테이너 배포를 완료합니다.
+      - name: Execute Deployment Commands via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.NAS_HOST }}
+          username: ${{ secrets.NAS_USER }}
+          key: ${{ secrets.NAS_SSH_KEY }}
+          port: ${{ secrets.NAS_PORT }}
+          script: |
+            # 1. 시놀로지 NAS의 프로젝트 폴더 경로로 이동
+            cd ${{ secrets.NAS_PROJECT_PATH }}
+            
+            # 2. 최신 이미지를 GHCR로부터 가져오기
+            # (최초 1회 NAS SSH 상에서 'docker login ghcr.io'가 되어있어야 합니다.)
+            sudo /usr/local/bin/docker-compose pull
+            
+            # 3. 새로운 이미지로 컨테이너 재구동
+            sudo /usr/local/bin/docker-compose up -d --force-recreate
+            
+            # 4. 디스크 용량 관리를 위해 미사용 오래된 도커 이미지 제거
+            sudo /usr/local/bin/docker image prune -f
