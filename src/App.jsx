@@ -1112,7 +1112,7 @@ function SettingsScreen() {
                     
                     <p>4. <strong>결제 및 취소/환불:</strong></p>
                     <p className="text-xs text-slate-500 pl-4 -mt-2">
-                        * 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.
+                        * 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱이나 SRT 앱</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.
                     </p>
                 </div>
             </div>
