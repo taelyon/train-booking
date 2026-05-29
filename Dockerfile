@@ -5,8 +5,8 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
 # 의존성 복사 및 설치
-COPY package*.json ./
-RUN npm ci
+COPY package.json ./
+RUN npm install
 
 # 소스 복사 및 빌드 실행 (dist 폴더 생성)
 COPY . .
