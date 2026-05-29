@@ -1095,16 +1095,24 @@ function SettingsScreen() {
 
             <div className="bg-slate-100 rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    🐳 사용 가이드
+                    💡 열차 예매 서비스 이용 가이드
                 </h2>
-                <div className="text-sm text-slate-600 space-y-2 leading-relaxed">
-                    <p>1. <strong>환경 설정:</strong> 최상위 폴더의 <code>docker-compose.yml</code>과 <code>.env</code> 파일을 NAS 프로젝트 경로에 배치하세요.</p>
-                    <p>2. <strong>컨테이너 구동:</strong> SSH 터미널에서 다음 명령어를 실행하여 서비스를 구동 및 업데이트합니다.</p>
-                    <code className="block bg-slate-200 p-2 rounded text-xs">sudo docker-compose pull && sudo docker-compose up -d --force-recreate</code>
-                    <p>3. <strong>브라우저 접속:</strong> <code className="text-blue-600 font-bold">http://[NAS_IP]:5010</code> (설정 포트)으로 접속하여 사용하세요.</p>
-                    <hr className="border-slate-200 my-2" />
-                    <p className="text-xs text-slate-500">
-                        * 코레일/SRT 보안 정책상 해외 클라우드 IP는 차단될 확률이 높으므로, 가급적 가정용 인터넷(개인 NAS 또는 홈 서버) 환경에서 구동하는 것을 권장합니다.
+                <div className="text-sm text-slate-600 space-y-3 leading-relaxed">
+                    <p>1. <strong>계정 설정:</strong> 상단 입력란에 본인의 KTX(코레일) 및 SRT(에스알) 계정 정보를 입력하고 <strong>[설정 저장하기]</strong>를 누르세요.</p>
+                    <p className="text-xs text-slate-500 pl-4 -mt-2">
+                        * 입력하신 계정 정보는 서버에 저장되지 않고, 사용하시는 <strong>개별 브라우저 내부(localStorage)</strong>에만 안전하게 보관됩니다.
+                    </p>
+                    
+                    <p>2. <strong>열차 조회 및 예매:</strong> 출발/도착역, 날짜, 인원을 선택하여 열차를 조회하세요.</p>
+                    
+                    <p>3. <strong>자동 예매 시도 (취소표 대기):</strong></p>
+                    <p className="text-xs text-slate-500 pl-4 -mt-2">
+                        * 원하는 열차가 매진된 경우 <strong>[자동 예매 시도]</strong>를 누르면, 취소표가 발생할 때까지 5초 간격으로 시스템이 자동 재시도합니다. (예매 성공 시 브라우저 알림이 발송됩니다.)
+                    </p>
+                    
+                    <p>4. <strong>결제 및 취소/환불:</strong></p>
+                    <p className="text-xs text-slate-500 pl-4 -mt-2">
+                        * 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.
                     </p>
                 </div>
             </div>
