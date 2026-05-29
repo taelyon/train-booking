@@ -1095,7 +1095,7 @@ function SettingsScreen() {
 
             <div className="bg-slate-100 rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                    🐳 NAS (Docker) 실행 가이드
+                    🐳 사용 가이드
                 </h2>
                 <div className="text-sm text-slate-600 space-y-2 leading-relaxed">
                     <p>1. <strong>환경 설정:</strong> 최상위 폴더의 <code>docker-compose.yml</code>과 <code>.env</code> 파일을 NAS 프로젝트 경로에 배치하세요.</p>
