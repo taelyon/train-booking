@@ -147,7 +147,14 @@ function SearchAndBookingFlow() {
     const [searchResults, setSearchResults] = useState([]);
     const [autoRetryData, setAutoRetryData] = useState(null);
     const [reservationResult, setReservationResult] = useState(null); // Used for the popup
-    const [favorites, setFavorites] = useState([]);
+    const [favorites, setFavorites] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('trainFavorites') || '[]');
+        } catch (e) {
+            console.error("Failed to parse favorites from localStorage", e);
+            return [];
+        }
+    });
 
     useEffect(() => {
         // 브라우저가 서비스 워커와 알림 기능을 지원하는지 확인
@@ -158,16 +165,6 @@ function SearchAndBookingFlow() {
             }
         }
     }, []); // 빈 배열[]은 이 코드가 맨 처음 한 번만 실행되게 함
-
-    useEffect(() => {
-        try {
-            const savedFavorites = JSON.parse(localStorage.getItem('trainFavorites') || '[]');
-            setFavorites(savedFavorites);
-        } catch (e) {
-            console.error("Failed to parse favorites from localStorage", e);
-            setFavorites([]);
-        }
-    }, []);
 
     const updateFavorites = (newFavorites) => {
         const uniqueFavorites = Array.from(new Set(newFavorites.map(fav => JSON.stringify(fav)))).map(favStr => JSON.parse(favStr));
@@ -428,11 +425,26 @@ function ReservationsScreen({ active }) {
 // --- View Components ---
 
 function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFavorite }) {
-    const [trainType, setTrainType] = useState('SRT');
-    const [depStation, setDepStation] = useState('수서');
-    const [arrStation, setArrStation] = useState('광주송정');
+    const [trainType, setTrainType] = useState(() => {
+        if (favorites && favorites.length > 0) return favorites[0].type;
+        return 'SRT';
+    });
+    const [depStation, setDepStation] = useState(() => {
+        if (favorites && favorites.length > 0) return favorites[0].dep;
+        return '수서';
+    });
+    const [arrStation, setArrStation] = useState(() => {
+        if (favorites && favorites.length > 0) return favorites[0].arr;
+        return '광주송정';
+    });
     
+    const isFirstRender = useRef(true);
+
     useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
         const defaultStations = STATIONS[trainType];
         if (trainType === 'SRT') {
             setDepStation(defaultStations.includes('수서') ? '수서' : defaultStations[0]);
