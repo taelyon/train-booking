@@ -1,6 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeUserToPush } from './push-notification';
 
+// --- Auth Utils ---
+export const getAuthHeaders = () => {
+    const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+    return {
+        'X-KTX-ID': credentials.ktxId || '',
+        'X-KTX-PW': credentials.ktxPw || '',
+        'X-SRT-ID': credentials.srtId || '',
+        'X-SRT-PW': credentials.srtPw || ''
+    };
+};
+
 // --- Icon Components ---
 const SearchIcon = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -183,17 +194,6 @@ function SearchAndBookingFlow() {
     const removeFavorite = (favoriteToRemove) => {
         const newFavorites = favorites.filter(fav => fav.type !== favoriteToRemove.type || fav.dep !== favoriteToRemove.dep || fav.arr !== favoriteToRemove.arr);
         updateFavorites(newFavorites);
-    };
-
-
-    const getAuthHeaders = () => {
-        const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-        return {
-            'X-KTX-ID': credentials.ktxId || '',
-            'X-KTX-PW': credentials.ktxPw || '',
-            'X-SRT-ID': credentials.srtId || '',
-            'X-SRT-PW': credentials.srtPw || ''
-        };
     };
 
     const handleSearch = async (e) => {
