@@ -65,6 +65,10 @@ jobs:
             # 1. 시놀로지 NAS의 프로젝트 폴더 경로로 이동
             cd ${{ secrets.NAS_PROJECT_PATH }}
             
+            # 1.5 볼륨 마운트에 필요한 디렉토리가 호스트(NAS)에 없을 경우 미리 생성 (Bind mount 오류 원천 차단)
+            mkdir -p logs
+            mkdir -p data
+            
             # 2. 최신 이미지를 GHCR로부터 가져오기
             # (최초 1회 NAS SSH 상에서 'docker login ghcr.io'가 되어있어야 합니다.)
             sudo /usr/local/bin/docker-compose pull
