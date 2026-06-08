@@ -38,6 +38,47 @@ push_subscription = None
 # 형태: { 'task_id': { 'status': 'running'|'stopped'|'success'|'failed', 'thread': <Thread>, 'details': {...} } }
 active_auto_reserves = {}
 
+TASKS_FILE = os.path.join(current_dir, '../data/tasks.json')
+os.makedirs(os.path.dirname(TASKS_FILE), exist_ok=True)
+
+def save_tasks():
+    tasks_to_save = {}
+    for task_id, task in active_auto_reserves.items():
+        if task['status'] == 'running':
+            tasks_to_save[task_id] = {
+                'status': task['status'],
+                'details': task['details'],
+                'message': task['message']
+            }
+    try:
+        with open(TASKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(tasks_to_save, f, ensure_ascii=False)
+    except Exception as e:
+        app.logger.error(f"Failed to save tasks: {e}")
+
+def load_and_resume_tasks():
+    if not os.path.exists(TASKS_FILE):
+        return
+    try:
+        with open(TASKS_FILE, 'r', encoding='utf-8') as f:
+            saved_tasks = json.load(f)
+        for task_id, task in saved_tasks.items():
+            active_auto_reserves[task_id] = task
+            details = task['details']
+            thread = threading.Thread(target=auto_reserve_worker, args=(
+                task_id, details['train_type'], details['dep'], details['arr'], 
+                details['date'], details['time'], details['train_number'], 
+                details['adults'], details['seat_type'], details['auth']
+            ))
+            thread.daemon = True
+            active_auto_reserves[task_id]['thread'] = thread
+            thread.start()
+        app.logger.info(f"Resumed {len(saved_tasks)} tasks from {TASKS_FILE}")
+    except Exception as e:
+        app.logger.error(f"Failed to load tasks: {e}")
+
+load_and_resume_tasks()
+
 # --- 클라이언트 캐싱 (매번 로그인하지 않고 세션 재사용) ---
 import time as _time
 
@@ -431,6 +472,9 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
             app.logger.error(f"Task {task_id} unexpected error: {e}")
             break
 
+    # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트
+    save_tasks()
+
 @app.route('/api/start-auto-reserve', methods=['POST'])
 def start_auto_reserve():
     form_data = request.form
@@ -471,6 +515,8 @@ def start_auto_reserve():
         active_auto_reserves[task_id]['thread'] = thread
         thread.start()
         
+        save_tasks()
+        
         return jsonify({'message': '백그라운드 자동 예매가 시작되었습니다.', 'task_id': task_id})
 
     except Exception as e:
@@ -486,6 +532,7 @@ def stop_auto_reserve():
         if task['details']['auth'] == auth:
             task['status'] = 'stopped'
             task['message'] = '사용자가 중단함'
+            save_tasks()
             return jsonify({'message': '자동 예매가 중단되었습니다.'})
         else:
             return jsonify({'error_message': '권한이 없습니다.'}), 403
