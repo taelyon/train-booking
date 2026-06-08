@@ -17,8 +17,21 @@ from dotenv import load_dotenv
 from srt import SRTResponseError, SRTLoginError, SRTError
 from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError
 
+import logging
+from logging.handlers import RotatingFileHandler
+
 load_dotenv()
 app = Flask(__name__, static_folder='../dist', static_url_path='/')
+
+# 로그 설정 (train-booking.log 파일로 저장, 5MB 제한, 3개 백업)
+handler = RotatingFileHandler('train-booking.log', maxBytes=5000000, backupCount=3, encoding='utf-8')
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+handler.setFormatter(formatter)
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
+app.logger.info('Train booking app started')
+
 push_subscription = None
 
 # 자동 예매 태스크 관리 전역 변수
@@ -626,12 +639,24 @@ def cancel():
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-def catch_all(path):
+def serve(path):
     """React SPA 라우팅을 지원하기 위해 api 경로가 아닌 모든 요청을 index.html로 서빙합니다."""
-    if path.startswith('api'):
-        return jsonify({'error': 'Not Found'}), 404
+    if path.startswith('api/'):
+        return jsonify({"error": "Not Found"}), 404
     return app.send_static_file('index.html')
 
+@app.route('/api/client-error', methods=['POST'])
+def client_error():
+    try:
+        data = request.json
+        app.logger.error(f"[Client Error] {data.get('message')} | {data.get('source')}:{data.get('lineno')} | col: {data.get('colno')} | error: {data.get('error')}")
+        return jsonify({"status": "logged"})
+    except:
+        return jsonify({"status": "failed"})
+
 if __name__ == '__main__':
+    from logging.handlers import RotatingFileHandler
+    handler = RotatingFileHandler('train-booking.log', maxBytes=10000000, backupCount=5)
+    app.logger.addHandler(handler)
     # 시놀로지 NAS 등 외부 환경에서 접근할 수 있도록 0.0.0.0 호스트로 5001 포트에서 실행합니다.
     app.run(host='0.0.0.0', port=5001, debug=True)
