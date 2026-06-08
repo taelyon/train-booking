@@ -476,7 +476,9 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
             app.logger.error(f"Task {task_id} unexpected error: {e}")
             break
 
-    # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트
+    # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트 및 메모리 해제
+    if task_id in active_auto_reserves:
+        del active_auto_reserves[task_id]
     save_tasks()
 
 @app.route('/api/start-auto-reserve', methods=['POST'])
@@ -536,6 +538,8 @@ def stop_auto_reserve():
         if task['details']['auth'] == auth:
             task['status'] = 'stopped'
             task['message'] = '사용자가 중단함'
+            if task_id in active_auto_reserves:
+                del active_auto_reserves[task_id]
             save_tasks()
             return jsonify({'message': '자동 예매가 중단되었습니다.'})
         else:
@@ -548,7 +552,7 @@ def auto_reserve_status():
     my_tasks = []
     
     for t_id, task in list(active_auto_reserves.items()):
-        if task['details']['auth'] == auth:
+        if task['details']['auth'] == auth and task['status'] == 'running':
             my_tasks.append({
                 'task_id': t_id,
                 'status': task['status'],
