@@ -24,7 +24,11 @@ load_dotenv()
 app = Flask(__name__, static_folder='../dist', static_url_path='/')
 
 # 로그 설정 (train-booking.log 파일로 저장, 5MB 제한, 3개 백업)
-handler = RotatingFileHandler('train-booking.log', maxBytes=5000000, backupCount=3, encoding='utf-8')
+LOG_DIR = os.path.join(current_dir, '../logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, 'train-booking.log')
+
+handler = RotatingFileHandler(LOG_FILE, maxBytes=5000000, backupCount=3, encoding='utf-8')
 handler.setLevel(logging.INFO)
 formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
 handler.setFormatter(formatter)

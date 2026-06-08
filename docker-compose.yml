@@ -13,7 +13,7 @@ services:
       # NAS의 프로젝트 폴더 내에 .env 파일을 미리 준비해 두어야 합니다.
       - ./.env:/app/.env
       # 로그 파일과 영속성 데이터를 NAS 바깥으로 빼내기 위한 설정
-      - ./train-booking.log:/app/train-booking.log
+      - ./logs:/app/logs
       - ./data:/app/data
     environment:
       - TZ=Asia/Seoul
