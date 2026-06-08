@@ -245,6 +245,7 @@ function SearchAndBookingFlow() {
 
         const body = {
             ...searchParams,
+            time: `${train.dep_time.substring(0,2)}:${train.dep_time.substring(2,4)}`, // 열차가 검색결과 첫 페이지에 나오도록 출발시간으로 덮어쓰기
             train_number: train.train_number || train.train_no,
             seat_type: seatType,
         };
