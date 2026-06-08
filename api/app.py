@@ -214,11 +214,30 @@ def get_config():
         'srtPw': os.environ.get('SRT_PW', '')
     })
 
+SUB_FILE = os.path.join(current_dir, '../data/subscription.json')
+
+def save_subscription():
+    try:
+        with open(SUB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(push_subscription, f)
+    except: pass
+
+def load_subscription():
+    global push_subscription
+    if os.path.exists(SUB_FILE):
+        try:
+            with open(SUB_FILE, 'r', encoding='utf-8') as f:
+                push_subscription = json.load(f)
+        except: pass
+
+load_subscription()
+
 @app.route('/api/subscribe', methods=['POST'])
 def subscribe():
     global push_subscription
     push_subscription = request.json
-    app.logger.info("Subscription received.")
+    save_subscription()
+    app.logger.info("Subscription received and saved.")
     return jsonify({'success': True}), 201
 
 def send_push_notification(title, body):
@@ -476,9 +495,7 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
             app.logger.error(f"Task {task_id} unexpected error: {e}")
             break
 
-    # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트 및 메모리 해제
-    if task_id in active_auto_reserves:
-        del active_auto_reserves[task_id]
+    # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트 (메모리에서는 프론트가 ACK할 때 삭제)
     save_tasks()
 
 @app.route('/api/start-auto-reserve', methods=['POST'])
@@ -552,7 +569,7 @@ def auto_reserve_status():
     my_tasks = []
     
     for t_id, task in list(active_auto_reserves.items()):
-        if task['details']['auth'] == auth and task['status'] == 'running':
+        if task['details']['auth'] == auth:
             my_tasks.append({
                 'task_id': t_id,
                 'status': task['status'],
@@ -567,6 +584,18 @@ def auto_reserve_status():
                 'seat_type': task['details']['seat_type']
             })
     return jsonify({'tasks': my_tasks})
+
+@app.route('/api/ack-auto-reserve', methods=['POST'])
+def ack_auto_reserve():
+    task_id = request.form.get('task_id')
+    auth = get_auth_from_headers()
+    if task_id in active_auto_reserves:
+        task = active_auto_reserves[task_id]
+        if task['details']['auth'] == auth:
+            del active_auto_reserves[task_id]
+            save_tasks()
+            return jsonify({'message': 'Task acknowledged and removed.'})
+    return jsonify({'message': 'Ok'})
 
 @app.route('/api/reservations')
 def reservations():

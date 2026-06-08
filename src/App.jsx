@@ -58,10 +58,33 @@ const AlertTriangleIcon = ({ className }) => (
 
 const SettingsIcon = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
         <circle cx="12" cy="12" r="3"></circle>
     </svg>
 );
+
+const Modal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = '확인', cancelText = '취소', type = 'info' }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className={`p-6 text-center ${type === 'success' ? 'bg-green-50' : type === 'danger' ? 'bg-red-50' : ''}`}>
+                    {type === 'success' && <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4"><svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg></div>}
+                    {type === 'danger' && <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4"><AlertTriangleIcon className="h-6 w-6 text-red-600"/></div>}
+                    <h3 className="text-lg leading-6 font-bold text-slate-900 mb-2">{title}</h3>
+                    <div className="text-sm text-slate-500 whitespace-pre-wrap">{message}</div>
+                </div>
+                <div className="px-6 py-4 bg-slate-50 flex justify-end gap-3">
+                    {onCancel && <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">{cancelText}</button>}
+                    <button onClick={onConfirm} className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${type === 'danger' ? 'bg-red-600 hover:bg-red-700' : type === 'success' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                        {confirmText}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // --- Sound Utility ---
 const playSuccessSound = () => {
@@ -322,6 +345,10 @@ function ReservationsScreen({ active }) {
     const [message, setMessage] = useState('');
     const [paymentInfo, setPaymentInfo] = useState(null); //결제정보
 
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, taskId: null });
+    const [successModal, setSuccessModal] = useState({ isOpen: false, task: null });
+    const [errorModal, setErrorModal] = useState({ isOpen: false, task: null });
+
     const fetchReservations = async () => {
         setIsLoading(true);
         setError('');
@@ -339,26 +366,58 @@ function ReservationsScreen({ active }) {
             if(!response.ok) throw new Error('예매 내역을 불러오는데 실패했습니다.');
             const data = await response.json();
             setReservations(data);
-            const bgResponse = await fetch('/api/auto-reserve-status', { headers: getAuthHeaders() });
-            if (bgResponse.ok) {
-                const bgData = await bgResponse.json();
-                setBgTasks(bgData.tasks || []);
-            }
         } catch (err) {
             setError(err.message);
         } finally {
             setIsLoading(false);
         }
     };
+
+    const pollBgTasks = async () => {
+        try {
+            const bgResponse = await fetch('/api/auto-reserve-status', { headers: getAuthHeaders() });
+            if (bgResponse.ok) {
+                const bgData = await bgResponse.json();
+                const tasks = bgData.tasks || [];
+                setBgTasks(tasks.filter(t => t.status === 'running'));
+
+                for (const task of tasks) {
+                    if (task.status === 'success') {
+                        setSuccessModal({ isOpen: true, task });
+                        await fetch('/api/ack-auto-reserve', { method: 'POST', body: new URLSearchParams({ task_id: task.task_id }), headers: getAuthHeaders() });
+                        fetchReservations(); // 예매 성공 시 전체 목록 즉시 갱신
+                    } else if (task.status === 'failed') {
+                        setErrorModal({ isOpen: true, task });
+                        await fetch('/api/ack-auto-reserve', { method: 'POST', body: new URLSearchParams({ task_id: task.task_id }), headers: getAuthHeaders() });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Polling error:', e);
+        }
+    };
     
     useEffect(() => {
+        let intervalId;
         if (active) {
             fetchReservations();
+            pollBgTasks(); // 최초 1회 호출
+            intervalId = setInterval(pollBgTasks, 10000); // 10초마다 갱신
         }
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
     }, [active]);
 
-    const handleStopBgTask = async (task_id) => {
-        if (!window.confirm('자동 예매를 중단하시겠습니까?')) return;
+    const openStopConfirm = (task_id) => {
+        setConfirmModal({ isOpen: true, taskId: task_id });
+    };
+
+    const handleStopBgTask = async () => {
+        const task_id = confirmModal.taskId;
+        setConfirmModal({ isOpen: false, taskId: null });
+        if (!task_id) return;
+
         setIsLoading(true);
         try {
             const body = new URLSearchParams({ task_id });
@@ -366,7 +425,7 @@ function ReservationsScreen({ active }) {
             const result = await response.json();
             if (!response.ok) throw new Error(result.error_message);
             setMessage(result.message);
-            await fetchReservations();
+            await pollBgTasks();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -430,7 +489,7 @@ function ReservationsScreen({ active }) {
                   bgTasks={bgTasks}
                   onCancel={handleCancel}
                   onPay={(info) => setPaymentInfo(info)}
-                  onStopBgTask={handleStopBgTask}
+                  onStopBgTask={openStopConfirm}
                   isLoading={isLoading} 
               />
              }
@@ -443,6 +502,32 @@ function ReservationsScreen({ active }) {
                     isLoading={isLoading}
                 />
             )}
+            <Modal 
+                isOpen={confirmModal.isOpen} 
+                title="자동 예매 중단" 
+                message="진행 중인 자동 예매를 중단하시겠습니까?" 
+                confirmText="중단하기" 
+                cancelText="계속하기"
+                type="danger"
+                onConfirm={handleStopBgTask} 
+                onCancel={() => setConfirmModal({ isOpen: false, taskId: null })} 
+            />
+            <Modal 
+                isOpen={successModal.isOpen} 
+                title="🎉 예매 성공!" 
+                message={`축하합니다! ${successModal.task?.train_type} ${successModal.task?.train_number} 열차 예매에 성공했습니다.\n\n앱에 등록된 카드로 즉시 결제하시거나, 코레일/SRT 앱에서 발권해 주세요.`} 
+                confirmText="확인"
+                type="success"
+                onConfirm={() => setSuccessModal({ isOpen: false, task: null })} 
+            />
+            <Modal 
+                isOpen={errorModal.isOpen} 
+                title="자동 예매 실패" 
+                message={`예매 진행 중 오류가 발생하여 중단되었습니다.\n\n사유: ${errorModal.task?.message}`} 
+                confirmText="확인"
+                type="danger"
+                onConfirm={() => setErrorModal({ isOpen: false, task: null })} 
+            />
         </div>
     )
 }
