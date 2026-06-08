@@ -1031,16 +1031,16 @@ function EmptyResults({ searchParams, onBack }) {
 
 function SettingsScreen() {
     const [notificationStatus, setNotificationStatus] = useState(
-        'Notification' in window ? Notification.permission : 'unsupported'
+        window.Notification ? window.Notification.permission : 'unsupported'
     );
     
     const handleRequestNotification = async () => {
-        if ('Notification' in window) {
+        if (window.Notification) {
             try {
                 await subscribeUserToPush();
             } catch(e) { console.error(e); }
-            setNotificationStatus(Notification.permission);
-            if (Notification.permission === 'granted') {
+            setNotificationStatus(window.Notification.permission);
+            if (window.Notification.permission === 'granted') {
                 setMessage('푸시 알림이 설정되었습니다.');
                 setTimeout(() => setMessage(''), 3000);
             } else {
