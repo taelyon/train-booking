@@ -1176,7 +1176,7 @@ function SettingsScreen() {
                         ) : notificationStatus === 'denied' ? (
                             <span className="px-3 py-1 bg-red-100 text-red-700 text-sm font-bold rounded-full">차단됨</span>
                         ) : notificationStatus === 'unsupported' ? (
-                            <span className="px-3 py-1 bg-slate-200 text-slate-700 text-sm font-bold rounded-full">지원 안함</span>
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 text-sm font-bold rounded-full">앱 설치 필요</span>
                         ) : (
                             <button onClick={handleRequestNotification} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition">
                                 알림 켜기
@@ -1186,6 +1186,11 @@ function SettingsScreen() {
                 </div>
                 {notificationStatus === 'denied' && (
                     <p className="text-xs text-red-500 mt-2">알림이 차단되어 있습니다. 주소창의 자물쇠 아이콘을 눌러 알림 권한을 '허용'으로 변경해주세요.</p>
+                )}
+                {notificationStatus === 'unsupported' && (
+                    <p className="text-xs text-amber-600 mt-2">
+                        아이폰(iOS) 사파리 브라우저에서는 하단의 '공유' 버튼(네모 안의 위쪽 화살표)을 눌러 <strong>[홈 화면에 추가]</strong> 기능을 통해 바탕화면에 앱을 설치하신 후, 생성된 앱으로 접속하셔야만 푸시 알림 기능을 사용할 수 있습니다.
+                    </p>
                 )}
             </div>
 
