@@ -1036,11 +1036,22 @@ function SettingsScreen() {
     
     const handleRequestNotification = async () => {
         if (window.Notification) {
-            try {
-                await subscribeUserToPush();
-            } catch(e) { console.error(e); }
-            setNotificationStatus(window.Notification.permission);
-            if (window.Notification.permission === 'granted') {
+            let permission = window.Notification.permission;
+            
+            // 아직 권한을 결정하지 않은 상태라면 시스템 팝업을 띄워 요청
+            if (permission === 'default' || (permission !== 'granted' && permission !== 'denied')) {
+                permission = await window.Notification.requestPermission();
+            }
+
+            if (permission === 'granted') {
+                try {
+                    await subscribeUserToPush();
+                } catch(e) { console.error(e); }
+            }
+            
+            setNotificationStatus(permission);
+            
+            if (permission === 'granted') {
                 setMessage('푸시 알림이 설정되었습니다.');
                 setTimeout(() => setMessage(''), 3000);
             } else {
