@@ -185,15 +185,6 @@ function SearchAndBookingFlow() {
         updateFavorites(newFavorites);
     };
 
-    useEffect(() => {
-        let timer;
-        if (autoRetryData) {
-            timer = setTimeout(() => {
-                handleReserve(autoRetryData.train, autoRetryData.seatType, true);
-            }, 5000);
-        }
-        return () => clearTimeout(timer);
-    }, [autoRetryData]);
 
     const getAuthHeaders = () => {
         const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
@@ -249,7 +240,7 @@ function SearchAndBookingFlow() {
             train_number: train.train_number || train.train_no,
             seat_type: seatType,
         };
-        const endpoint = isRetry ? '/api/auto-retry' : '/api/reserve';
+        const endpoint = isRetry ? '/api/start-auto-reserve' : '/api/reserve';
 
         try {
             const response = await fetch(endpoint, {
@@ -263,23 +254,32 @@ function SearchAndBookingFlow() {
             const result = await response.json();
             if (!response.ok) throw new Error(result.error_message || '예약 처리 중 오류가 발생했습니다.');
             
-            if (result.retry) {
-                 const attempt = (autoRetryData?.attempt || 0) + 1;
-                 setAutoRetryData({ train, seatType, attempt });
-                 setView('autoRetry');
+            if (isRetry) {
+                setReservationResult({ success: true, message: "백그라운드 자동 예매가 시작되었습니다. 앱을 종료하셔도 푸시 알림으로 알려드립니다." });
+                setView('results');
+                setIsLoading(false);
+            } else if (result.retry) {
+                const bgResponse = await fetch('/api/start-auto-reserve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...getAuthHeaders() },
+                    body: new URLSearchParams(body),
+                });
+                const bgResult = await bgResponse.json();
+                if (!bgResponse.ok) throw new Error(bgResult.error_message);
+                
+                setReservationResult({ success: true, message: "열차가 매진되어 백그라운드 자동 예매를 시작했습니다. 앱을 종료하셔도 푸시 알림으로 알려드립니다." });
+                setView('results');
+                setIsLoading(false);
             } else if (result.reservation) {
-                setAutoRetryData(null);
                 playSuccessSound();
                 setReservationResult({ success: true, data: result.reservation });
-                setView('results'); // Prevent crash
+                setView('results');
                 setIsLoading(false);
             } else {
-                 setAutoRetryData(null);
                  setReservationResult({ success: false, message: result.error_message || '알 수 없는 오류가 발생했습니다.' });
                  setIsLoading(false);
             }
         } catch (err) {
-            setAutoRetryData(null);
             setReservationResult({ success: false, message: err.message });
             setIsLoading(false);
         }
@@ -288,7 +288,6 @@ function SearchAndBookingFlow() {
     const renderMainView = () => {
         switch (view) {
             case 'results': return <ResultsView data={searchResults} onReserve={handleReserve} onBack={() => setView('search')} isLoading={isLoading} />;
-            case 'autoRetry': return <AutoRetryView key={autoRetryData?.attempt} train={autoRetryData?.train} searchParams={searchParams} onCancel={() => { setAutoRetryData(null); setView('results'); setIsLoading(false); }} />;
             default: return <SearchForm onSubmit={handleSearch} isLoading={isLoading} favorites={favorites} onAddFavorite={addFavorite} onRemoveFavorite={removeFavorite} />;
         }
     };
@@ -317,6 +316,7 @@ function SearchAndBookingFlow() {
 
 function ReservationsScreen({ active }) {
     const [reservations, setReservations] = useState({ srt_reservations: [], ktx_reservations: [], srt_error: null, ktx_error: null });
+    const [bgTasks, setBgTasks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
@@ -339,6 +339,11 @@ function ReservationsScreen({ active }) {
             if(!response.ok) throw new Error('예매 내역을 불러오는데 실패했습니다.');
             const data = await response.json();
             setReservations(data);
+            const bgResponse = await fetch('/api/auto-reserve-status', { headers: getAuthHeaders() });
+            if (bgResponse.ok) {
+                const bgData = await bgResponse.json();
+                setBgTasks(bgData.tasks || []);
+            }
         } catch (err) {
             setError(err.message);
         } finally {
@@ -351,6 +356,23 @@ function ReservationsScreen({ active }) {
             fetchReservations();
         }
     }, [active]);
+
+    const handleStopBgTask = async (task_id) => {
+        if (!window.confirm('자동 예매를 중단하시겠습니까?')) return;
+        setIsLoading(true);
+        try {
+            const body = new URLSearchParams({ task_id });
+            const response = await fetch('/api/stop-auto-reserve', { method: 'POST', body, headers: getAuthHeaders() });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error_message);
+            setMessage(result.message);
+            await fetchReservations();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleCancel = async (pnr_no, train_type, is_ticket) => {
         if (!pnr_no || !train_type) {
@@ -405,8 +427,10 @@ function ReservationsScreen({ active }) {
              {isLoading ? <div className="text-center p-8"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div></div> :
               <ReservationsView 
                   reservations={reservations} 
+                  bgTasks={bgTasks}
                   onCancel={handleCancel}
                   onPay={(info) => setPaymentInfo(info)}
+                  onStopBgTask={handleStopBgTask}
                   isLoading={isLoading} 
               />
              }
@@ -524,6 +548,28 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                     </div>
                     
                     <div>
+            {bgTasks && bgTasks.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-3">진행 중인 자동 예매</h2>
+                    <div className="space-y-4">
+                        {bgTasks.map(task => (
+                            <div key={task.task_id} className="bg-white p-4 rounded-lg shadow-sm border border-blue-200 space-y-3">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                    <span className="text-sm font-semibold text-slate-600">{task.date.substring(0,4)}년 {task.date.substring(4,6)}월 {task.date.substring(6,8)}일 {task.time.substring(0,2)}:{task.time.substring(2,4)}</span>
+                                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 animate-pulse">자동 예매 중</span>
+                                </div>
+                                <div className="flex justify-between items-baseline mb-2">
+                                    <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
+                                </div>
+                                <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
+                                <div className="pt-3">
+                                    <button onClick={() => onStopBgTask(task.task_id)} disabled={isLoading} className="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition">중단하기</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
                         <label className="block text-slate-700 text-sm font-bold mb-1">출발일시</label>
                         <div className="flex items-center border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden">
                             <input 
@@ -790,7 +836,7 @@ function EmptyReservations() {
     );
 }
 
-function ReservationsView({ reservations, onCancel, onPay, isLoading }) {
+function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask, isLoading }) {
     const srtList = reservations.srt_reservations || [];
     const ktxList = reservations.ktx_reservations || [];
     const srtError = reservations.srt_error;
@@ -799,7 +845,7 @@ function ReservationsView({ reservations, onCancel, onPay, isLoading }) {
     const hasSrtReservations = srtList.length > 0;
     const hasKtxReservations = ktxList.length > 0;
 
-    if (!hasSrtReservations && !hasKtxReservations && !srtError && !ktxError) {
+    if (!hasSrtReservations && !hasKtxReservations && !srtError && !ktxError && (!bgTasks || bgTasks.length === 0)) {
         return <EmptyReservations />;
     }
 
@@ -984,6 +1030,26 @@ function EmptyResults({ searchParams, onBack }) {
 }
 
 function SettingsScreen() {
+    const [notificationStatus, setNotificationStatus] = useState(
+        'Notification' in window ? Notification.permission : 'unsupported'
+    );
+    
+    const handleRequestNotification = async () => {
+        if ('Notification' in window) {
+            try {
+                await subscribeUserToPush();
+            } catch(e) { console.error(e); }
+            setNotificationStatus(Notification.permission);
+            if (Notification.permission === 'granted') {
+                setMessage('푸시 알림이 설정되었습니다.');
+                setTimeout(() => setMessage(''), 3000);
+            } else {
+                setMessage('푸시 알림 권한이 거부되었습니다. 브라우저 설정에서 직접 허용해주세요.');
+                setTimeout(() => setMessage(''), 3000);
+            }
+        }
+    };
+
     const [credentials, setCredentials] = useState({
         ktxId: '',
         ktxPw: '',
@@ -1091,6 +1157,36 @@ function SettingsScreen() {
                         placeholder="비밀번호 입력"
                     />
                 </div>
+            </div>
+
+            {/* 푸시 알림 설정 구역 */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-green-600 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-green-600 rounded-full"></span>
+                    푸시 알림 설정
+                </h2>
+                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div>
+                        <p className="font-semibold text-slate-800">예매 성공 알림</p>
+                        <p className="text-xs text-slate-500 mt-1">자동 예매 성공 시 푸시 알림을 받습니다.</p>
+                    </div>
+                    <div>
+                        {notificationStatus === 'granted' ? (
+                            <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-full">허용됨</span>
+                        ) : notificationStatus === 'denied' ? (
+                            <span className="px-3 py-1 bg-red-100 text-red-700 text-sm font-bold rounded-full">차단됨</span>
+                        ) : notificationStatus === 'unsupported' ? (
+                            <span className="px-3 py-1 bg-slate-200 text-slate-700 text-sm font-bold rounded-full">지원 안함</span>
+                        ) : (
+                            <button onClick={handleRequestNotification} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition">
+                                알림 켜기
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {notificationStatus === 'denied' && (
+                    <p className="text-xs text-red-500 mt-2">알림이 차단되어 있습니다. 주소창의 자물쇠 아이콘을 눌러 알림 권한을 '허용'으로 변경해주세요.</p>
+                )}
             </div>
 
             <button 

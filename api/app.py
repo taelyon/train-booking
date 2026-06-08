@@ -2,6 +2,9 @@ import json # json 모듈 추가
 from pywebpush import webpush, WebPushException # pywebpush 추가
 import sys
 import os
+import uuid
+import threading
+import time
 from flask import Flask, request, jsonify
 from enum import Enum
 from pathlib import Path
@@ -17,6 +20,10 @@ from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError
 load_dotenv()
 app = Flask(__name__, static_folder='../dist', static_url_path='/')
 push_subscription = None
+
+# 자동 예매 태스크 관리 전역 변수
+# 형태: { 'task_id': { 'status': 'running'|'stopped'|'success'|'failed', 'thread': <Thread>, 'details': {...} } }
+active_auto_reserves = {}
 
 # --- 클라이언트 캐싱 (매번 로그인하지 않고 세션 재사용) ---
 import time as _time
@@ -343,58 +350,153 @@ def reserve():
     except Exception as e:
         return jsonify({'error_message': str(e)}), 500
 
-@app.route('/api/auto-retry', methods=['POST'])
-def auto_retry():
+def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_number, adults, seat_type, auth_dict):
+    task = active_auto_reserves.get(task_id)
+    if not task: return
+
+    date_str = date.replace('-', '')
+    time_str = time_val.replace(':', '') + '00'
+    
+    app.logger.info(f"Task {task_id} started.")
+
+    while task['status'] == 'running':
+        try:
+            client, search_options, passengers, reserve_option = (None, {}, [], None)
+            
+            if train_type == 'SRT':
+                client = get_srt_client(user_id=auth_dict['srt_id'], user_pw=auth_dict['srt_pw'])
+                search_options, passengers = {'available_only': False}, [srt.Adult(adults)]
+                reserve_option = srt.SeatType.GENERAL_ONLY if seat_type == 'GENERAL' else srt.SeatType.SPECIAL_ONLY
+            elif train_type == 'KTX':
+                client = get_ktx_client(user_id=auth_dict['ktx_id'], user_pw=auth_dict['ktx_pw'])
+                search_options = {'include_no_seats': True, 'train_type': ktx.TrainType.KTX}
+                passengers, reserve_option = [ktx.AdultPassenger(adults)], ktx.ReserveOption.GENERAL_ONLY if seat_type == 'GENERAL' else ktx.ReserveOption.SPECIAL_ONLY
+
+            all_trains = client.search_train(dep=dep, arr=arr, date=date_str, time=time_str, **search_options)
+            target_train = next((t for t in all_trains if (t.train_number if train_type == 'SRT' else t.train_no) == train_number), None)
+            
+            if not target_train:
+                task['status'] = 'failed'
+                task['message'] = "선택한 열차를 찾을 수 없습니다."
+                app.logger.error(f"Task {task_id} failed: target train not found")
+                break
+
+            reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
+            
+            task['status'] = 'success'
+            task['message'] = "예매 성공"
+            
+            # 예매 성공 알림 보내기
+            d_name = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
+            a_name = target_train.arr_station_name if train_type == 'SRT' else target_train.arr_name
+            send_push_notification(
+                title="✅ 예매 성공!",
+                body=f"{d_name} → {a_name} ({train_number}) 자동 예매에 성공했습니다."
+            )
+            app.logger.info(f"Task {task_id} success.")
+            break
+
+        except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
+            msg = str(e)
+            if any(keyword in msg for keyword in ["잔여석없음", "Sold out", "매진", "한도수 초과", "예약대기"]):
+                # 매진 시 5초 대기 후 계속 재시도
+                time.sleep(5)
+                continue
+            else:
+                task['status'] = 'failed'
+                task['message'] = msg
+                app.logger.error(f"Task {task_id} error: {msg}")
+                break
+        except MacroError as e:
+            task['status'] = 'failed'
+            task['message'] = f'코레일 서버 차단: {e}'
+            app.logger.error(f"Task {task_id} MacroError: {e}")
+            break
+        except Exception as e:
+            task['status'] = 'failed'
+            task['message'] = str(e)
+            app.logger.error(f"Task {task_id} unexpected error: {e}")
+            break
+
+@app.route('/api/start-auto-reserve', methods=['POST'])
+def start_auto_reserve():
     form_data = request.form
     try:
         train_type = form_data.get('type')
         dep, arr = form_data.get('dep'), form_data.get('arr')
-        date_val = form_data.get('date')
-        time_val = form_data.get('time')
-        if not date_val or not time_val:
-            return jsonify({'error_message': '자동 재시도를 위한 날짜 또는 시간 정보가 없습니다.'}), 400
-
-        date, time = date_val.replace('-', ''), time_val.replace(':', '') + '00'
+        date_val, time_val = form_data.get('date'), form_data.get('time')
         train_number = form_data.get('train_number')
         adults = int(form_data.get('adults', 1))
         seat_type = form_data.get('seat_type', 'GENERAL')
 
-        client, search_options, passengers, reserve_option = (None, {}, [], None)
+        if not date_val or not time_val or not train_number:
+            return jsonify({'error_message': '자동 예매를 위한 필수 정보가 누락되었습니다.'}), 400
 
         auth = get_auth_from_headers()
-        if train_type == 'SRT':
-            client = get_srt_client(user_id=auth['srt_id'], user_pw=auth['srt_pw'])
-            search_options, passengers = {'available_only': False}, [srt.Adult(adults)]
-            reserve_option = srt.SeatType.GENERAL_ONLY if seat_type == 'GENERAL' else srt.SeatType.SPECIAL_ONLY
-        elif train_type == 'KTX':
-            client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
-            search_options = {'include_no_seats': True, 'train_type': ktx.TrainType.KTX}
-            passengers, reserve_option = [ktx.AdultPassenger(adults)], ktx.ReserveOption.GENERAL_ONLY if seat_type == 'GENERAL' else ktx.ReserveOption.SPECIAL_ONLY
+        
+        task_id = str(uuid.uuid4())
+        task_details = {
+            'train_type': train_type,
+            'dep': dep,
+            'arr': arr,
+            'date': date_val,
+            'time': time_val,
+            'train_number': train_number,
+            'seat_type': seat_type,
+            'adults': adults,
+            'auth': auth
+        }
+        
+        active_auto_reserves[task_id] = {
+            'status': 'running',
+            'details': task_details,
+            'message': '시도 중...'
+        }
+        
+        thread = threading.Thread(target=auto_reserve_worker, args=(task_id, train_type, dep, arr, date_val, time_val, train_number, adults, seat_type, auth))
+        thread.daemon = True
+        active_auto_reserves[task_id]['thread'] = thread
+        thread.start()
+        
+        return jsonify({'message': '백그라운드 자동 예매가 시작되었습니다.', 'task_id': task_id})
 
-        all_trains = client.search_train(dep=dep, arr=arr, date=date, time=time, **search_options)
-        target_train = next((t for t in all_trains if (t.train_number if train_type == 'SRT' else t.train_no) == train_number), None)
-        if not target_train: return jsonify({'error_message': "선택한 열차를 찾을 수 없습니다."}), 404
+    except Exception as e:
+        return jsonify({'error_message': str(e)}), 500
 
-        reservation = client.reserve(target_train, passengers=passengers, option=reserve_option)
-        # 예매 성공 알림 보내기
-        dep = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
-        arr = target_train.arr_station_name if train_type == 'SRT' else target_train.arr_name
-        send_push_notification(
-            title="✅ 예매 성공!",
-            body=f"{dep} → {arr} 열차 예매에 성공했습니다."
-        )
-        return jsonify({'reservation': reservation.to_dict()})
+@app.route('/api/stop-auto-reserve', methods=['POST'])
+def stop_auto_reserve():
+    task_id = request.form.get('task_id')
+    auth = get_auth_from_headers()
+    
+    if task_id in active_auto_reserves:
+        task = active_auto_reserves[task_id]
+        if task['details']['auth'] == auth:
+            task['status'] = 'stopped'
+            task['message'] = '사용자가 중단함'
+            return jsonify({'message': '자동 예매가 중단되었습니다.'})
+        else:
+            return jsonify({'error_message': '권한이 없습니다.'}), 403
+    return jsonify({'error_message': '해당 작업을 찾을 수 없습니다.'}), 404
 
-    except (SRTResponseError, SoldOutError, SRTError, KorailError) as e:
-        msg = str(e)
-        app.logger.error(f"Reserve failed: {msg}")
-        # 매진뿐만 아니라 예약대기 한도 초과 시에도 멈추지 않고 계속 재시도하도록 수정
-        if any(keyword in msg for keyword in ["잔여석없음", "Sold out", "매진", "한도수 초과", "예약대기"]):
-            return jsonify({'retry': True, 'message': '매진 또는 예약대기 한도 초과. 5초 후 재시도합니다.'})
-        return jsonify({'error_message': msg}), 500
-    except MacroError as e:
-        return jsonify({'error_message': f'코레일 서버 차단: {e}', 'error_code': 'MACRO_ERROR'}), 503
-    except Exception as e: return jsonify({'error_message': str(e)}), 500
+@app.route('/api/auto-reserve-status')
+def auto_reserve_status():
+    auth = get_auth_from_headers()
+    my_tasks = []
+    
+    for t_id, task in list(active_auto_reserves.items()):
+        if task['details']['auth'] == auth:
+            my_tasks.append({
+                'task_id': t_id,
+                'status': task['status'],
+                'message': task['message'],
+                'train_type': task['details']['train_type'],
+                'dep': task['details']['dep'],
+                'arr': task['details']['arr'],
+                'date': task['details']['date'],
+                'time': task['details']['time'],
+                'train_number': task['details']['train_number']
+            })
+    return jsonify({'tasks': my_tasks})
 
 @app.route('/api/reservations')
 def reservations():
