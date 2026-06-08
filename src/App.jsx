@@ -548,28 +548,6 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                     </div>
                     
                     <div>
-            {bgTasks && bgTasks.length > 0 && (
-                <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-slate-800 mb-3">진행 중인 자동 예매</h2>
-                    <div className="space-y-4">
-                        {bgTasks.map(task => (
-                            <div key={task.task_id} className="bg-white p-4 rounded-lg shadow-sm border border-blue-200 space-y-3">
-                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                                    <span className="text-sm font-semibold text-slate-600">{task.date.substring(0,4)}년 {task.date.substring(4,6)}월 {task.date.substring(6,8)}일 {task.time.substring(0,2)}:{task.time.substring(2,4)}</span>
-                                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 animate-pulse">자동 예매 중</span>
-                                </div>
-                                <div className="flex justify-between items-baseline mb-2">
-                                    <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
-                                </div>
-                                <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
-                                <div className="pt-3">
-                                    <button onClick={() => onStopBgTask(task.task_id)} disabled={isLoading} className="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition">중단하기</button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
                         <label className="block text-slate-700 text-sm font-bold mb-1">출발일시</label>
                         <div className="flex items-center border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden">
                             <input 
@@ -881,6 +859,28 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
     
     return (
         <div>
+            {bgTasks && bgTasks.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-3">진행 중인 자동 예매</h2>
+                    <div className="space-y-4">
+                        {bgTasks.map(task => (
+                            <div key={task.task_id} className="bg-white p-4 rounded-lg shadow-sm border border-blue-200 space-y-3">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                                    <span className="text-sm font-semibold text-slate-600">{task.date.substring(0,4)}년 {task.date.substring(4,6)}월 {task.date.substring(6,8)}일 {task.time.substring(0,2)}:{task.time.substring(2,4)}</span>
+                                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 animate-pulse">자동 예매 중</span>
+                                </div>
+                                <div className="flex justify-between items-baseline mb-2">
+                                    <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
+                                </div>
+                                <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
+                                <div className="pt-3">
+                                    <button onClick={() => onStopBgTask(task.task_id)} disabled={isLoading} className="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition">중단하기</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
             {renderList('SRT', srtList, srtError)}
             {renderList('KTX', ktxList, ktxError)}
         </div>
