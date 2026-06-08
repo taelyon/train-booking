@@ -641,7 +641,8 @@ def cancel():
 @app.route('/<path:path>')
 def serve(path):
     """React SPA 라우팅을 지원하기 위해 api 경로가 아닌 모든 요청을 index.html로 서빙합니다."""
-    if path.startswith('api/'):
+    # API 요청이거나 정적 파일(.js, .css 등) 요청인데 파일을 못 찾고 여기까지 왔다면 404 반환
+    if path.startswith('api/') or path.startswith('assets/') or '.' in path:
         return jsonify({"error": "Not Found"}), 404
     return app.send_static_file('index.html')
 
