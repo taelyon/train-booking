@@ -562,7 +562,9 @@ def auto_reserve_status():
                 'arr': task['details']['arr'],
                 'date': task['details']['date'],
                 'time': task['details']['time'],
-                'train_number': task['details']['train_number']
+                'train_number': task['details']['train_number'],
+                'adults': task['details']['adults'],
+                'seat_type': task['details']['seat_type']
             })
     return jsonify({'tasks': my_tasks})
 

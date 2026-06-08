@@ -873,7 +873,7 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
                                 </div>
                                 <div className="flex justify-between items-baseline mb-2">
                                     <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
-                                    {task.adults && <span className="text-sm text-slate-500 font-medium">성인 {task.adults}명</span>}
+                                    {task.adults && <span className="text-sm text-slate-500 font-medium">{task.seat_type === 'GENERAL' ? '일반실' : '특실'} / 성인 {task.adults}명</span>}
                                 </div>
                                 <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
                                 <div className="pt-3">
