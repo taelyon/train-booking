@@ -1,4 +1,5 @@
 import json # json 모듈 추가
+import requests # requests 모듈 추가
 from pywebpush import webpush, WebPushException # pywebpush 추가
 import sys
 import os
@@ -427,6 +428,38 @@ def reserve():
     except Exception as e:
         return jsonify({'error_message': str(e)}), 500
 
+def is_transient_error(e):
+    """일시적인 네트워크 연결 문제, 서버 점검, 타임아웃 오류 등인지 판별합니다."""
+    # 1. 시스템 수준의 네트워크 연결 및 타임아웃 오류
+    if isinstance(e, (ConnectionError, TimeoutError)):
+        return True
+    
+    # 2. requests 라이브러리 예외 (ConnectionError, Timeout, HTTPError 등)
+    try:
+        import requests
+        if isinstance(e, requests.exceptions.RequestException):
+            return True
+    except ImportError:
+        pass
+    
+    # 3. 예외 클래스명 기반 확인 (curl_cffi 등 커스텀 예외)
+    err_name = type(e).__name__
+    if any(kw in err_name for kw in ["Connection", "Timeout", "SSLError", "Network", "HTTPError", "NetFunnel"]):
+        return True
+        
+    # 4. 에러 메시지 내용 기반 확인 (서버 점검 및 Gateway 오류 등)
+    msg = str(e)
+    transient_keywords = [
+        "점검", "정리작업", "정리 작업", "정기점검", "정기 점검", "시스템 점검", "서비스 점검",
+        "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "500 Internal Server Error",
+        "connection", "timeout", "network", "disconnected", "호스트", "연결", "시간 초과",
+        "netfunnel", "NetFunnel"
+    ]
+    if any(kw in msg for kw in transient_keywords):
+        return True
+        
+    return False
+
 def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_number, adults, seat_type, auth_dict):
     task = active_auto_reserves.get(task_id)
     if not task: return
@@ -479,6 +512,12 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
                 # 매진 시 5초 대기 후 계속 재시도
                 time.sleep(5)
                 continue
+            elif is_transient_error(e):
+                app.logger.warning(f"Task {task_id} transient error: {e}. Retrying in 10 seconds...")
+                task['message'] = f"서버 점검/연결 오류로 재시도 중: {e}"
+                save_tasks()  # 'running' 상태와 새로운 메시지를 tasks.json에 저장
+                time.sleep(10)
+                continue
             else:
                 task['status'] = 'failed'
                 task['message'] = msg
@@ -490,10 +529,17 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
             app.logger.error(f"Task {task_id} MacroError: {e}")
             break
         except Exception as e:
-            task['status'] = 'failed'
-            task['message'] = str(e)
-            app.logger.error(f"Task {task_id} unexpected error: {e}")
-            break
+            if is_transient_error(e):
+                app.logger.warning(f"Task {task_id} transient error: {e}. Retrying in 10 seconds...")
+                task['message'] = f"네트워크 오류로 재시도 중: {e}"
+                save_tasks()  # 'running' 상태와 새로운 메시지를 tasks.json에 저장
+                time.sleep(10)
+                continue
+            else:
+                task['status'] = 'failed'
+                task['message'] = str(e)
+                app.logger.error(f"Task {task_id} unexpected error: {e}")
+                break
 
     # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트 (메모리에서는 프론트가 ACK할 때 삭제)
     save_tasks()
