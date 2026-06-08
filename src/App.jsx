@@ -866,11 +866,14 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
                         {bgTasks.map(task => (
                             <div key={task.task_id} className="bg-white p-4 rounded-lg shadow-sm border border-blue-200 space-y-3">
                                 <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-                                    <span className="text-sm font-semibold text-slate-600">{task.date.substring(0,4)}년 {task.date.substring(4,6)}월 {task.date.substring(6,8)}일 {task.time.substring(0,2)}:{task.time.substring(2,4)}</span>
+                                    <span className="text-sm font-semibold text-slate-600">
+                                        {task.date.split('-')[0]}년 {task.date.split('-')[1]}월 {task.date.split('-')[2]}일 {task.time}
+                                    </span>
                                     <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 animate-pulse">자동 예매 중</span>
                                 </div>
                                 <div className="flex justify-between items-baseline mb-2">
                                     <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
+                                    {task.adults && <span className="text-sm text-slate-500 font-medium">성인 {task.adults}명</span>}
                                 </div>
                                 <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
                                 <div className="pt-3">
