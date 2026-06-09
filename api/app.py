@@ -73,7 +73,7 @@ def load_and_resume_tasks():
             thread = threading.Thread(target=auto_reserve_worker, args=(
                 task_id, details['train_type'], details['dep'], details['arr'], 
                 details['date'], details['time'], details['train_number'], 
-                details['adults'], details['seat_type'], details['auth']
+                details.get('adults', 1), details.get('seat_type', 'GENERAL'), details['auth']
             ))
             thread.daemon = True
             active_auto_reserves[task_id]['thread'] = thread
