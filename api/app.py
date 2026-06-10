@@ -86,54 +86,58 @@ load_and_resume_tasks()
 
 # --- 클라이언트 캐싱 (매번 로그인하지 않고 세션 재사용) ---
 import time as _time
+import threading
 
 _cached_clients = {
     'srt': {'client': None, 'login_time': 0},
     'ktx': {'client': None, 'login_time': 0},
 }
 _CLIENT_TTL = 600  # 10분간 세션 유지
+_client_lock = threading.Lock()
 
 def get_srt_client(force_login=False, user_id=None, user_pw=None):
     """SRT 클라이언트를 캐싱하여 반복 로그인을 방지합니다."""
-    cache = _cached_clients['srt']
-    now = _time.time()
-    
-    # 전달받은 아이디/비번이 없으면 환경변수 사용
-    final_id = user_id or os.environ.get('SRT_ID')
-    final_pw = user_pw or os.environ.get('SRT_PW')
+    with _client_lock:
+        cache = _cached_clients['srt']
+        now = _time.time()
+        
+        # 전달받은 아이디/비번이 없으면 환경변수 사용
+        final_id = user_id or os.environ.get('SRT_ID')
+        final_pw = user_pw or os.environ.get('SRT_PW')
 
-    # 캐시된 클라이언트가 있고, 아이디가 같고, 시간이 유효하면 캐시 반환
-    if not force_login and cache['client'] and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
-        return cache['client']
-    
-    if not (final_id and final_pw):
-        raise ValueError("SRT 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
-    
-    client = srt.SRT(final_id, final_pw)
-    cache['client'] = client
-    cache['id'] = final_id
-    cache['login_time'] = now
-    return client
+        # 캐시된 클라이언트가 있고, 아이디가 같고, 시간이 유효하면 캐시 반환
+        if not force_login and cache['client'] and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
+            return cache['client']
+        
+        if not (final_id and final_pw):
+            raise ValueError("SRT 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
+        
+        client = srt.SRT(final_id, final_pw)
+        cache['client'] = client
+        cache['id'] = final_id
+        cache['login_time'] = now
+        return client
 
 def get_ktx_client(force_login=False, user_id=None, user_pw=None):
     """KTX(코레일) 클라이언트를 캐싱하여 반복 로그인을 방지합니다."""
-    cache = _cached_clients['ktx']
-    now = _time.time()
+    with _client_lock:
+        cache = _cached_clients['ktx']
+        now = _time.time()
 
-    final_id = user_id or os.environ.get('KTX_ID')
-    final_pw = user_pw or os.environ.get('KTX_PW')
+        final_id = user_id or os.environ.get('KTX_ID')
+        final_pw = user_pw or os.environ.get('KTX_PW')
 
-    if not force_login and cache['client'] and cache['client'].logined and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
-        return cache['client']
-    
-    if not (final_id and final_pw):
-        raise ValueError("KTX 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
-    
-    client = ktx.Korail(final_id, final_pw)
-    cache['client'] = client
-    cache['id'] = final_id
-    cache['login_time'] = now
-    return client
+        if not force_login and cache['client'] and getattr(cache['client'], 'logined', False) and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
+            return cache['client']
+        
+        if not (final_id and final_pw):
+            raise ValueError("KTX 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
+        
+        client = ktx.Korail(final_id, final_pw)
+        cache['client'] = client
+        cache['id'] = final_id
+        cache['login_time'] = now
+        return client
 
 # 검색전용 캐싱 클라이언트 (로그인 없이 세션/기기ID만 유지)
 _cached_search_clients = {
@@ -626,8 +630,8 @@ def auto_reserve_status():
                 'date': task['details']['date'],
                 'time': task['details']['time'],
                 'train_number': task['details']['train_number'],
-                'adults': task['details']['adults'],
-                'seat_type': task['details']['seat_type']
+                'adults': task['details'].get('adults', 1),
+                'seat_type': task['details'].get('seat_type', 'GENERAL')
             })
     return jsonify({'tasks': my_tasks})
 
