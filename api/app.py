@@ -67,20 +67,34 @@ def load_and_resume_tasks():
     try:
         with open(TASKS_FILE, 'r', encoding='utf-8') as f:
             saved_tasks = json.load(f)
+        
+        loaded_count = 0
         for task_id, task in saved_tasks.items():
-            active_auto_reserves[task_id] = task
-            details = task['details']
-            thread = threading.Thread(target=auto_reserve_worker, args=(
-                task_id, details['train_type'], details['dep'], details['arr'], 
-                details['date'], details['time'], details['train_number'], 
-                details.get('adults', 1), details.get('seat_type', 'GENERAL'), details['auth']
-            ))
-            thread.daemon = True
-            active_auto_reserves[task_id]['thread'] = thread
-            thread.start()
-        app.logger.info(f"Resumed {len(saved_tasks)} tasks from {TASKS_FILE}")
+            try:
+                active_auto_reserves[task_id] = task
+                details = task.get('details', {})
+                thread = threading.Thread(target=auto_reserve_worker, args=(
+                    task_id, 
+                    details.get('train_type', 'SRT'), 
+                    details.get('dep', ''), 
+                    details.get('arr', ''), 
+                    details.get('date', ''), 
+                    details.get('time', ''), 
+                    details.get('train_number', ''), 
+                    details.get('adults', 1), 
+                    details.get('seat_type', 'GENERAL'), 
+                    details.get('auth', {})
+                ))
+                thread.daemon = True
+                active_auto_reserves[task_id]['thread'] = thread
+                thread.start()
+                loaded_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to load task {task_id}: {e}")
+                
+        app.logger.info(f"Resumed {loaded_count} tasks from {TASKS_FILE}")
     except Exception as e:
-        app.logger.error(f"Failed to load tasks: {e}")
+        app.logger.error(f"Failed to open or parse tasks file: {e}")
 
 load_and_resume_tasks()
 
@@ -602,7 +616,8 @@ def stop_auto_reserve():
     
     if task_id in active_auto_reserves:
         task = active_auto_reserves[task_id]
-        if task['details']['auth'] == auth:
+        task_auth = task['details'].get('auth')
+        if not task_auth or task_auth == auth:
             task['status'] = 'stopped'
             task['message'] = '사용자가 중단함'
             if task_id in active_auto_reserves:
@@ -619,19 +634,20 @@ def auto_reserve_status():
     my_tasks = []
     
     for t_id, task in list(active_auto_reserves.items()):
-        if task['details']['auth'] == auth:
+        task_auth = task['details'].get('auth')
+        if not task_auth or task_auth == auth:
             my_tasks.append({
                 'task_id': t_id,
                 'status': task['status'],
                 'message': task['message'],
-                'train_type': task['details']['train_type'],
-                'dep': task['details']['dep'],
-                'arr': task['details']['arr'],
-                'date': task['details']['date'],
-                'time': task['details']['time'],
-                'train_number': task['details']['train_number'],
-                'adults': task['details'].get('adults', 1),
-                'seat_type': task['details'].get('seat_type', 'GENERAL')
+                'train_type': task.get('details', {}).get('train_type', ''),
+                'dep': task.get('details', {}).get('dep', ''),
+                'arr': task.get('details', {}).get('arr', ''),
+                'date': task.get('details', {}).get('date', ''),
+                'time': task.get('details', {}).get('time', ''),
+                'train_number': task.get('details', {}).get('train_number', ''),
+                'adults': task.get('details', {}).get('adults', 1),
+                'seat_type': task.get('details', {}).get('seat_type', 'GENERAL')
             })
     return jsonify({'tasks': my_tasks})
 
@@ -641,7 +657,8 @@ def ack_auto_reserve():
     auth = get_auth_from_headers()
     if task_id in active_auto_reserves:
         task = active_auto_reserves[task_id]
-        if task['details']['auth'] == auth:
+        task_auth = task['details'].get('auth')
+        if not task_auth or task_auth == auth:
             del active_auto_reserves[task_id]
             save_tasks()
             return jsonify({'message': 'Task acknowledged and removed.'})
