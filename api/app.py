@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from srt import SRTResponseError, SRTLoginError, SRTError
 from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError
+from mailer import send_email
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -287,7 +288,8 @@ def get_auth_from_headers():
         'ktx_id': request.headers.get('X-KTX-ID'),
         'ktx_pw': request.headers.get('X-KTX-PW'),
         'srt_id': request.headers.get('X-SRT-ID'),
-        'srt_pw': request.headers.get('X-SRT-PW')
+        'srt_pw': request.headers.get('X-SRT-PW'),
+        'notify_email': request.headers.get('X-NOTIFY-EMAIL')
     }
 
 @app.route('/api/search')
@@ -517,10 +519,31 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
             # 예매 성공 알림 보내기
             d_name = target_train.dep_station_name if train_type == 'SRT' else target_train.dep_name
             a_name = target_train.arr_station_name if train_type == 'SRT' else target_train.arr_name
+            
+            # 푸시 알림
             send_push_notification(
                 title="✅ 예매 성공!",
                 body=f"{d_name} → {a_name} ({train_number}) 자동 예매에 성공했습니다."
             )
+            
+            # 이메일 알림
+            notify_email = auth_dict.get('notify_email')
+            if notify_email:
+                subject = f"[{train_type}] 예매 성공 알림!"
+                body = f"""
+                <h2>기차 예매가 성공적으로 완료되었습니다!</h2>
+                <ul>
+                    <li><b>열차:</b> {train_type} {train_number}</li>
+                    <li><b>여정:</b> {d_name} → {a_name}</li>
+                    <li><b>일시:</b> {date_val} {time_val} 이후</li>
+                    <li><b>인원:</b> {adults}명 ({seat_type})</li>
+                </ul>
+                <p>앱이나 코레일/SRT 공식 홈페이지에 접속하여 기한 내에 결제를 진행해 주세요.<br>미결제 시 예약이 자동 취소됩니다.</p>
+                """
+                mail_success, mail_msg = send_email(notify_email, subject, body)
+                if not mail_success:
+                    app.logger.error(f"Failed to send email to {notify_email}: {mail_msg}")
+                    
             app.logger.info(f"Task {task_id} success.")
             break
 

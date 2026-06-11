@@ -8,7 +8,8 @@ export const getAuthHeaders = () => {
         'X-KTX-ID': credentials.ktxId || '',
         'X-KTX-PW': credentials.ktxPw || '',
         'X-SRT-ID': credentials.srtId || '',
-        'X-SRT-PW': credentials.srtPw || ''
+        'X-SRT-PW': credentials.srtPw || '',
+        'X-NOTIFY-EMAIL': credentials.notifyEmail || ''
     };
 };
 
@@ -1153,7 +1154,8 @@ function SettingsScreen() {
         ktxId: '',
         ktxPw: '',
         srtId: '',
-        srtPw: ''
+        srtPw: '',
+        notifyEmail: ''
     });
     const [message, setMessage] = useState('');
 
@@ -1169,7 +1171,8 @@ function SettingsScreen() {
                     ktxId: saved.ktxId || defaults.ktxId || '',
                     ktxPw: saved.ktxPw || defaults.ktxPw || '',
                     srtId: saved.srtId || defaults.srtId || '',
-                    srtPw: saved.srtPw || defaults.srtPw || ''
+                    srtPw: saved.srtPw || defaults.srtPw || '',
+                    notifyEmail: saved.notifyEmail || ''
                 });
             } catch (e) {
                 console.error("Failed to fetch default config", e);
@@ -1177,7 +1180,8 @@ function SettingsScreen() {
                     ktxId: saved.ktxId || '',
                     ktxPw: saved.ktxPw || '',
                     srtId: saved.srtId || '',
-                    srtPw: saved.srtPw || ''
+                    srtPw: saved.srtPw || '',
+                    notifyEmail: saved.notifyEmail || ''
                 });
             }
         };
@@ -1292,6 +1296,25 @@ function SettingsScreen() {
                     </p>
                 )}
             </div>
+            {/* 추가 알림 설정 구역 */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+                <h2 className="text-lg font-bold text-blue-600 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
+                    추가 알림 설정
+                </h2>
+                <div className="space-y-2">
+                    <label className="text-sm font-semibold text-slate-600">예매 성공 시 알림 받을 이메일</label>
+                    <input 
+                        type="email" 
+                        name="notifyEmail" 
+                        value={credentials.notifyEmail} 
+                        onChange={handleChange} 
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="example@gmail.com" 
+                    />
+                    <p className="text-xs text-slate-500 mt-1">입력하지 않으면 이메일 알림이 전송되지 않습니다.</p>
+                </div>
+            </div>
 
             <button 
                 onClick={handleSave}
@@ -1318,7 +1341,7 @@ function SettingsScreen() {
                     
                     <p>2. <strong>열차 조회 및 예매:</strong> 출발/도착역, 날짜, 인원을 선택하여 열차를 조회하세요.</p>
                     
-                    <p>3. <strong>자동 예매 시도 (취소표 대기):</strong> 원하는 열차가 매진된 경우 <strong>[자동 예매 시도]</strong>를 누르면, 취소표가 발생할 때까지 5초 간격으로 시스템이 자동 재시도합니다. (예매 성공 시 브라우저 알림이 발송됩니다.)</p>
+                    <p>3. <strong>자동 예매 시도 (취소표 대기):</strong> 원하는 열차가 매진된 경우 <strong>[자동 예매 시도]</strong>를 누르면, 취소표가 발생할 때까지 5초 간격으로 시스템이 자동 재시도합니다. (예매 성공 시 브라우저 알림 및 이메일 알림이 발송됩니다.)</p>
                     
                     <p>4. <strong>결제 및 취소/환불:</strong> 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱이나 SRT 앱</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.</p>
                 </div>
