@@ -431,6 +431,25 @@ def reserve():
             title="✅ 예매 성공!",
             body=f"{dep} → {arr} 열차 예매에 성공했습니다."
         )
+        
+        # 이메일 알림
+        notify_email = auth.get('notify_email')
+        if notify_email:
+            subject = f"[{train_type}] 예매 성공 알림!"
+            body = f"""
+            <h2>기차 예매가 성공적으로 완료되었습니다!</h2>
+            <ul>
+                <li><b>열차:</b> {train_type} {train_number}</li>
+                <li><b>여정:</b> {dep} → {arr}</li>
+                <li><b>일시:</b> {date_val} {time_val}</li>
+                <li><b>인원:</b> {adults}명</li>
+            </ul>
+            <p>앱이나 코레일/SRT 공식 홈페이지에 접속하여 기한 내에 결제를 진행해 주세요.<br>미결제 시 예약이 자동 취소됩니다.</p>
+            """
+            mail_success, mail_msg = send_email(notify_email, subject, body)
+            if not mail_success:
+                app.logger.error(f"Failed to send email to {notify_email}: {mail_msg}")
+                
         return jsonify({'reservation': reservation.to_dict()})
 
     except (SRTLoginError) as e:
