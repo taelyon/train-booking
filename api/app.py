@@ -97,8 +97,6 @@ def load_and_resume_tasks():
     except Exception as e:
         app.logger.error(f"Failed to open or parse tasks file: {e}")
 
-load_and_resume_tasks()
-
 # --- 클라이언트 캐싱 (매번 로그인하지 않고 세션 재사용) ---
 import time as _time
 import threading
@@ -554,7 +552,7 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
                 <ul>
                     <li><b>열차:</b> {train_type} {train_number}</li>
                     <li><b>여정:</b> {d_name} → {a_name}</li>
-                    <li><b>일시:</b> {date_val} {time_val} 이후</li>
+                    <li><b>일시:</b> {date} {time_val} 이후</li>
                     <li><b>인원:</b> {adults}명 ({seat_type})</li>
                 </ul>
                 <p>앱이나 코레일/SRT 공식 홈페이지에 접속하여 기한 내에 결제를 진행해 주세요.<br>미결제 시 예약이 자동 취소됩니다.</p>
@@ -849,6 +847,9 @@ def client_error():
         return jsonify({"status": "logged"})
     except:
         return jsonify({"status": "failed"})
+
+# 초기 서버 구동 시 예매 상태 복원
+load_and_resume_tasks()
 
 if __name__ == '__main__':
     from logging.handlers import RotatingFileHandler
