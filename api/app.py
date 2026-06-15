@@ -481,7 +481,7 @@ def is_transient_error(e):
     
     # 3. 예외 클래스명 기반 확인 (curl_cffi 등 커스텀 예외)
     err_name = type(e).__name__
-    if any(kw in err_name for kw in ["Connection", "Timeout", "SSLError", "Network", "HTTPError", "NetFunnel"]):
+    if any(kw in err_name for kw in ["Connection", "Timeout", "SSLError", "Network", "HTTPError", "NetFunnel", "JSONDecodeError"]):
         return True
         
     # 4. 에러 메시지 내용 기반 확인 (서버 점검 및 Gateway 오류 등)
@@ -490,7 +490,7 @@ def is_transient_error(e):
         "점검", "정리작업", "정리 작업", "정기점검", "정기 점검", "시스템 점검", "서비스 점검",
         "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "500 Internal Server Error",
         "connection", "timeout", "network", "disconnected", "호스트", "연결", "시간 초과",
-        "netfunnel", "NetFunnel"
+        "netfunnel", "NetFunnel", "Expecting value"
     ]
     if any(kw in msg for kw in transient_keywords):
         return True
