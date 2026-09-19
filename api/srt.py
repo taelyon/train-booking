@@ -1,11 +1,13 @@
-import abc
+from __future__ import annotations
 try:
-    import curl_cffi
+    from curl_cffi.requests import Session as CurlSession
     HAS_CURL_CFFI = True
 except ImportError:
-    import requests
+    CurlSession = None
     HAS_CURL_CFFI = False
+import requests
 
+import abc
 import json
 import re
 import time
@@ -105,7 +107,7 @@ API_ENDPOINTS = {
 
 # Exception classes
 class SRTError(Exception):
-    def __init__(self, msg):
+    def __init__(self, msg: str = ""):
         super().__init__(msg)
         self.msg = msg
 
@@ -126,7 +128,8 @@ class SRTDuplicateError(SRTResponseError):
 
 
 class SRTNotLoggedInError(SRTError):
-    pass
+    def __init__(self, msg: str = "로그인이 필요합니다."):
+        super().__init__(msg)
 
 
 class SRTNetFunnelError(SRTError):
@@ -137,9 +140,12 @@ class SRTNetFunnelError(SRTError):
 class Passenger(metaclass=abc.ABCMeta):
     """Base class for different passenger types."""
 
-    @abc.abstractmethod
-    def __init__(self):
-        pass
+    name: str = ""
+    type_code: str = ""
+    count: int = 1
+
+    def __init__(self, count: int = 1):
+        self.count = count
 
     def __init_internal__(self, name: str, type_code: str, count: int):
         self.name = name
@@ -157,12 +163,15 @@ class Passenger(metaclass=abc.ABCMeta):
         raise ValueError("Passenger types must be the same")
 
     @classmethod
-    def combine(cls, passengers: List["Passenger"]) -> List["Passenger"]:
-        if not all(isinstance(p, Passenger) for p in passengers):
+    def combine(cls, passengers: List["Passenger"] | "Passenger") -> List["Passenger"]:
+        passenger_list: List["Passenger"] = (
+            [passengers] if isinstance(passengers, Passenger) else list(passengers)
+        )
+        if not all(isinstance(p, Passenger) for p in passenger_list):
             raise TypeError("All passengers must be based on Passenger")
 
-        passenger_dict = {}
-        for passenger in passengers:
+        passenger_dict: Dict[type, Passenger] = {}
+        for passenger in passenger_list:
             key = passenger.__class__
             passenger_dict[key] = (
                 passenger_dict.get(key, passenger.__class__(0)) + passenger
@@ -180,7 +189,7 @@ class Passenger(metaclass=abc.ABCMeta):
     def get_passenger_dict(
         passengers: List["Passenger"],
         special_seat: bool = False,
-        window_seat: str = None,
+        window_seat: bool | None = None,
     ) -> Dict[str, str]:
         if not all(isinstance(p, Passenger) for p in passengers):
             raise TypeError("All passengers must be instances of Passenger")
@@ -206,31 +215,31 @@ class Passenger(metaclass=abc.ABCMeta):
 
 class Adult(Passenger):
     def __init__(self, count: int = 1):
-        super().__init__()
+        super().__init__(count)
         super().__init_internal__("어른/청소년", "1", count)
 
 
 class Child(Passenger):
     def __init__(self, count: int = 1):
-        super().__init__()
+        super().__init__(count)
         super().__init_internal__("어린이", "5", count)
 
 
 class Senior(Passenger):
     def __init__(self, count: int = 1):
-        super().__init__()
+        super().__init__(count)
         super().__init_internal__("경로", "4", count)
 
 
 class Disability1To3(Passenger):
     def __init__(self, count: int = 1):
-        super().__init__()
+        super().__init__(count)
         super().__init_internal__("장애 1~3급", "2", count)
 
 
 class Disability4To6(Passenger):
     def __init__(self, count: int = 1):
-        super().__init__()
+        super().__init__(count)
         super().__init_internal__("장애 4~6급", "3", count)
 
 
@@ -272,17 +281,17 @@ class SRTTicket:
     }
 
     def __init__(self, data: dict) -> None:
-        self.car = data.get("scarNo")
-        self.seat = data.get("seatNo")
-        self.seat_type_code = data.get("psrmClCd")
-        self.seat_type = self.SEAT_TYPE[self.seat_type_code]
-        self.passenger_type_code = data.get("dcntKndCd")
+        self.car = data.get("scarNo", "")
+        self.seat = data.get("seatNo", "")
+        self.seat_type_code = str(data.get("psrmClCd") or "1")
+        self.seat_type = self.SEAT_TYPE.get(self.seat_type_code, "일반실")
+        self.passenger_type_code = str(data.get("dcntKndCd") or "")
         self.passenger_type = self.DISCOUNT_TYPE.get(
             self.passenger_type_code, "기타 할인"
         )
-        self.price = int(data.get("rcvdAmt"))
-        self.original_price = int(data.get("stdrPrc"))
-        self.discount = int(data.get("dcntPrc"))
+        self.price = int(data.get("rcvdAmt") or 0)
+        self.original_price = int(data.get("stdrPrc") or 0)
+        self.discount = int(data.get("dcntPrc") or 0)
         self.is_waiting = self.seat == ""
 
     def __str__(self) -> str:
@@ -532,8 +541,8 @@ class NetFunnelHelper:
     }
 
     def __init__(self, debug=False):
-        if HAS_CURL_CFFI:
-            self._session = curl_cffi.Session(impersonate="chrome")
+        if HAS_CURL_CFFI and CurlSession:
+            self._session = CurlSession(impersonate="chrome")
         else:
             self._session = requests.session()
         self._session.headers.update(self.DEFAULT_HEADERS)
@@ -592,7 +601,7 @@ class NetFunnelHelper:
         return map(response.get, ("status", "key", "nwait", "ip"))
 
     def _build_params(
-        self, opcode: str, timestamp: str = None, key: str = None
+        self, opcode: str, timestamp: str | None = None, key: str | None = None
     ) -> dict:
         params = {
             "opcode": opcode,
@@ -652,8 +661,8 @@ class SRT:
     def __init__(
         self, srt_id: str, srt_pw: str, auto_login: bool = True, verbose: bool = False
     ) -> None:
-        if HAS_CURL_CFFI:
-            self._session = curl_cffi.Session(impersonate="chrome")
+        if HAS_CURL_CFFI and CurlSession:
+            self._session = CurlSession(impersonate="chrome")
         else:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
@@ -1230,7 +1239,7 @@ class SRT:
     def reserve_info(self, reservation: SRTReservation | int) -> dict:
         if not isinstance(reservation, (SRTReservation, int, str)):
             raise TypeError("reservation must be SRTReservation or reservation number")
-        pnr_no = getattr(reservation, "reservation_number", reservation)
+        pnr_no = str(getattr(reservation, "reservation_number", reservation))
         referer = API_ENDPOINTS["reserve_info_referer"] + pnr_no
         self._session.headers.update({"Referer": referer})
         r = self._session.post(url=API_ENDPOINTS["reserve_info"], data={"pnrNo": pnr_no})

@@ -4,11 +4,13 @@ import { subscribeUserToPush } from './push-notification';
 // --- Auth Utils ---
 export const getAuthHeaders = () => {
     const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+    const ktxId = credentials.ktxId || credentials.srtId || '';
+    const ktxPw = credentials.ktxPw || credentials.srtPw || '';
     return {
-        'X-KTX-ID': credentials.ktxId || '',
-        'X-KTX-PW': credentials.ktxPw || '',
-        'X-SRT-ID': credentials.srtId || '',
-        'X-SRT-PW': credentials.srtPw || '',
+        'X-KTX-ID': ktxId,
+        'X-KTX-PW': ktxPw,
+        'X-SRT-ID': ktxId,
+        'X-SRT-PW': ktxPw,
         'X-NOTIFY-EMAIL': credentials.notifyEmail || ''
     };
 };
@@ -113,9 +115,20 @@ const playSuccessSound = () => {
 
 
 // --- Constants ---
+const ALL_STATIONS = [
+    // 수도권 주요 출발역
+    "수서", "서울", "용산", "영등포", "광명", "수원", "동탄", "평택지제", "행신", "청량리",
+    // 경부/동해선 방면
+    "천안아산", "오송", "대전", "서대전", "김천구미", "동대구", "서대구", "경주", "포항", "밀양", "구포", "부산", "울산(통도사)",
+    // 호남/전라선 방면
+    "공주", "익산", "정읍", "광주송정", "나주", "목포", "전주", "남원", "곡성", "구례구", "순천", "여천", "여수EXPO",
+    // 경전선/강원 방면
+    "마산", "창원", "창원중앙", "진영", "진주", "강릉", "경산", "논산"
+];
+
 const STATIONS = {
-    "SRT": ["수서", "동탄", "평택지제", "경주", "곡성", "공주", "광주송정", "구례구", "김천(구미)", "나주", "남원", "대전", "동대구", "마산", "목포", "밀양", "부산", "서대구", "순천", "여수EXPO", "여천", "오송", "울산(통도사)", "익산", "전주", "정읍", "진영", "진주", "창원", "창원중앙", "천안아산", "포항"],
-    "KTX": ["서울", "용산", "영등포", "광명", "수원", "천안아산", "오송", "대전", "서대전", "김천구미", "동대구", "경주", "포항", "밀양", "구포", "부산", "울산(통도사)", "마산", "창원중앙", "경산", "논산", "익산", "정읍", "광주송정", "목포", "전주", "순천", "여수EXPO", "청량리", "강릉", "행신"],
+    "KTX": ALL_STATIONS,
+    "SRT": ALL_STATIONS
 };
 
 // --- Main App Component ---
@@ -208,15 +221,15 @@ function SearchAndBookingFlow() {
     };
 
     const addFavorite = (favorite) => {
-        if (favorites.some(fav => fav.type === favorite.type && fav.dep === favorite.dep && fav.arr === favorite.arr)) {
+        if (favorites.some(fav => fav.dep === favorite.dep && fav.arr === favorite.arr)) {
             alert('이미 등록된 즐겨찾기 구간입니다.');
             return;
         }
-        updateFavorites([...favorites, favorite]);
+        updateFavorites([...favorites, { ...favorite, type: 'KTX' }]);
     };
 
     const removeFavorite = (favoriteToRemove) => {
-        const newFavorites = favorites.filter(fav => fav.type !== favoriteToRemove.type || fav.dep !== favoriteToRemove.dep || fav.arr !== favoriteToRemove.arr);
+        const newFavorites = favorites.filter(fav => fav.dep !== favoriteToRemove.dep || fav.arr !== favoriteToRemove.arr);
         updateFavorites(newFavorites);
     };
 
@@ -356,12 +369,14 @@ function ReservationsScreen({ active }) {
         setMessage('');
         try {
             const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
+            const ktxId = credentials.ktxId || credentials.srtId || '';
+            const ktxPw = credentials.ktxPw || credentials.srtPw || '';
             const response = await fetch('/api/reservations', {
                 headers: {
-                    'X-KTX-ID': credentials.ktxId || '',
-                    'X-KTX-PW': credentials.ktxPw || '',
-                    'X-SRT-ID': credentials.srtId || '',
-                    'X-SRT-PW': credentials.srtPw || ''
+                    'X-KTX-ID': ktxId,
+                    'X-KTX-PW': ktxPw,
+                    'X-SRT-ID': ktxId,
+                    'X-SRT-PW': ktxPw
                 }
             });
             if(!response.ok) throw new Error('예매 내역을 불러오는데 실패했습니다.');
@@ -435,8 +450,8 @@ function ReservationsScreen({ active }) {
     };
 
     const handleCancel = async (pnr_no, train_type, is_ticket) => {
-        if (!pnr_no || !train_type) {
-            alert('오류: 취소에 필요한 예약번호 또는 열차 종류 정보가 없습니다.');
+        if (!pnr_no) {
+            alert('오류: 취소에 필요한 예약번호 정보가 없습니다.');
             return;
         }
         if (!window.confirm('정말로 이 예매를 취소하시겠습니까?')) return;
@@ -445,8 +460,8 @@ function ReservationsScreen({ active }) {
         setError('');
         setMessage('');
         try {
-            const body = new URLSearchParams({ pnr_no, train_type, is_ticket: String(is_ticket === true) });
-            const response = await fetch('/api/cancel', { method: 'POST', body });
+            const body = new URLSearchParams({ pnr_no, train_type: train_type || 'KTX', is_ticket: String(is_ticket === true) });
+            const response = await fetch('/api/cancel', { method: 'POST', body, headers: getAuthHeaders() });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error_message || '취소 중 오류 발생');
             
@@ -465,7 +480,7 @@ function ReservationsScreen({ active }) {
         setMessage('');
         try {
             const body = new URLSearchParams(paymentDetails);
-            const response = await fetch('/api/pay', { method: 'POST', body });
+            const response = await fetch('/api/pay', { method: 'POST', body, headers: getAuthHeaders() });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error_message || '결제 중 오류 발생');
             
@@ -536,46 +551,24 @@ function ReservationsScreen({ active }) {
 // --- View Components ---
 
 function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFavorite }) {
-    const [trainType, setTrainType] = useState(() => {
-        if (favorites && favorites.length > 0) return favorites[0].type;
-        return 'SRT';
-    });
     const [depStation, setDepStation] = useState(() => {
         if (favorites && favorites.length > 0) return favorites[0].dep;
         return '수서';
     });
     const [arrStation, setArrStation] = useState(() => {
         if (favorites && favorites.length > 0) return favorites[0].arr;
-        return '광주송정';
+        return '부산';
     });
-    
-    const isFirstRender = useRef(true);
-
-    useEffect(() => {
-        if (isFirstRender.current) {
-            isFirstRender.current = false;
-            return;
-        }
-        const defaultStations = STATIONS[trainType];
-        if (trainType === 'SRT') {
-            setDepStation(defaultStations.includes('수서') ? '수서' : defaultStations[0]);
-            setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
-        } else {
-            setDepStation(defaultStations.includes('용산') ? '용산' : defaultStations[0]);
-            setArrStation(defaultStations.includes('광주송정') ? '광주송정' : defaultStations[1]);
-        }
-    }, [trainType]);
 
     const handleAddFavorite = () => {
         if (!depStation || !arrStation) {
             alert('출발역과 도착역을 모두 선택해주세요.');
             return;
         }
-        onAddFavorite({ type: trainType, dep: depStation, arr: arrStation });
+        onAddFavorite({ type: 'KTX', dep: depStation, arr: arrStation });
     };
 
     const applyFavorite = (fav) => {
-        setTrainType(fav.type);
         setDepStation(fav.dep);
         setArrStation(fav.arr);
     };
@@ -586,13 +579,8 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
     };
 
     const now = new Date();
-    // KST는 UTC+9. 현재 UTC 시간에 9시간을 더해 한국 시간을 구합니다.
     const kstTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-
-    // KST 기준 날짜를 YYYY-MM-DD 형식으로 가져옵니다.
     const today = kstTime.toISOString().slice(0, 10);
-
-    // 출발 시간 기본값으로 5분을 더합니다.
     const kstNowWithBuffer = new Date(kstTime.getTime() + 5 * 60 * 1000);
     const hours = kstNowWithBuffer.getUTCHours().toString().padStart(2, '0');
     const minutes = kstNowWithBuffer.getUTCMinutes().toString().padStart(2, '0');
@@ -620,17 +608,50 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
             
             <div className="bg-white rounded-xl shadow-lg p-5">
                 <form onSubmit={onSubmit} className="space-y-4">
-                    <div className="flex bg-slate-100 rounded-lg p-1">{['SRT', 'KTX'].map(type => (<label key={type} className="flex-1 text-center cursor-pointer"><input type="radio" name="type" value={type} checked={trainType === type} onChange={() => setTrainType(type)} className="sr-only" /><span className={`block py-2 rounded-md transition font-semibold ${trainType === type ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>{type}</span></label>))}</div>
-                    
-                    <div className="relative bg-slate-50 rounded-lg p-4">
+                    <input type="hidden" name="type" value="KTX" />
+
+                    {/* KTX/SRT 통합 안내 뱃지 */}
+                    <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/70 rounded-xl px-4 py-2.5 shadow-xs">
                         <div className="flex items-center gap-2">
-                            <StationSelect label="출발" name="dep" stations={STATIONS[trainType]} value={depStation} onChange={e => setDepStation(e.target.value)} />
-                            <button type="button" onClick={handleSwapStations} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
-                                <SwapIcon />
-                            </button>
-                            <StationSelect label="도착" name="arr" stations={STATIONS[trainType]} value={arrStation} onChange={e => setArrStation(e.target.value)} />
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                            </span>
+                            <span className="font-bold text-slate-800 text-sm">고속철도 통합 예매</span>
                         </div>
-                         <button type="button" onClick={handleAddFavorite} className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
+                        <span className="text-xs font-semibold text-blue-700 bg-white/90 px-2.5 py-1 rounded-full border border-blue-200 shadow-xs">
+                            KTX · 수서 KTX 전 노선
+                        </span>
+                    </div>
+
+                    {/* 주요 출발역 빠른 선택 칩 */}
+                    <div>
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 text-xs scrollbar-none">
+                            <span className="text-slate-400 font-semibold flex-shrink-0">빠른선택:</span>
+                            {['수서', '서울', '용산', '광명', '동탄', '대전', '동대구', '부산', '광주송정'].map(stn => (
+                                <button
+                                    key={stn}
+                                    type="button"
+                                    onClick={() => setDepStation(stn)}
+                                    className={`px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition ${
+                                        depStation === stn ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                    }`}
+                                >
+                                    {stn}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="relative bg-slate-50 rounded-lg p-4">
+                            <div className="flex items-center gap-2">
+                                <StationSelect label="출발" name="dep" stations={ALL_STATIONS} value={depStation} onChange={e => setDepStation(e.target.value)} />
+                                <button type="button" onClick={handleSwapStations} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
+                                    <SwapIcon />
+                                </button>
+                                <StationSelect label="도착" name="arr" stations={ALL_STATIONS} value={arrStation} onChange={e => setArrStation(e.target.value)} />
+                            </div>
+                            <button type="button" onClick={handleAddFavorite} title="즐겨찾기에 추가" className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
+                        </div>
                     </div>
                     
                     <div>
@@ -673,9 +694,9 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                         {favorites.map((fav, index) => (
                             <div key={index} className="relative group">
                                 <button type="button" onClick={() => applyFavorite(fav)} onTouchEnd={(e) => { e.preventDefault(); applyFavorite(fav); }} className="bg-white border border-slate-300 rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition">
-                                    <span className={`font-bold ${fav.type === 'SRT' ? 'text-purple-600' : 'text-blue-600'}`}>{fav.type}</span> {fav.dep} → {fav.arr}
+                                    <span className="font-bold text-blue-600">KTX</span> {fav.dep} → {fav.arr}
                                 </button>
-                                 <button type="button" onClick={() => onRemoveFavorite(fav)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">×</button>
+                                <button type="button" onClick={() => onRemoveFavorite(fav)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">×</button>
                             </div>
                         ))}
                     </div>
@@ -730,9 +751,8 @@ function ResultsView({ data, onReserve, onBack, isLoading }) {
 }
 
 function TrainCard({ train, trainType, onReserve, isLoading }) {
-    const isSrt = trainType === 'SRT';
-    const isGeneralAvailable = isSrt ? train.general_seat_available : train.has_general_seat;
-    const isSpecialAvailable = isSrt ? train.special_seat_available : train.has_special_seat;
+    const isGeneralAvailable = train.general_seat_available ?? train.has_general_seat;
+    const isSpecialAvailable = train.special_seat_available ?? train.has_special_seat;
     
     const [selectedSeat, setSelectedSeat] = useState(() => {
         if (isGeneralAvailable) return 'GENERAL';
@@ -753,21 +773,33 @@ function TrainCard({ train, trainType, onReserve, isLoading }) {
     };
     
     const duration = calculateDuration(train.dep_time, train.arr_time);
+    const depName = train.dep_station_name || train.dep_name;
+    const arrName = train.arr_station_name || train.arr_name;
+    const trainName = train.train_name || train.train_type_name || 'KTX';
+    const trainNo = train.train_number || train.train_no;
+    const isSuseoLine = depName === '수서' || arrName === '수서';
 
     return (
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 transition-all hover:shadow-md">
             <div className="flex justify-between items-baseline mb-3">
-              <span className={`font-bold text-lg ${isSrt ? 'text-purple-700' : 'text-blue-700'}`}>{train.train_name || train.train_type_name} {train.train_number || train.train_no}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-lg text-blue-700">{trainName} {trainNo}</span>
+                {isSuseoLine && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        수서고속선
+                    </span>
+                )}
+              </div>
               <span className="text-sm text-slate-500">{duration} 소요</span>
             </div>
             <div className="flex justify-between items-center mb-4">
-                <div className="text-center"><div className="text-2xl font-bold text-slate-800">{train.dep_time.substring(0,2)}:{train.dep_time.substring(2,4)}</div><div className="text-sm text-slate-600">{train.dep_station_name || train.dep_name}</div></div>
+                <div className="text-center"><div className="text-2xl font-bold text-slate-800">{train.dep_time.substring(0,2)}:{train.dep_time.substring(2,4)}</div><div className="text-sm text-slate-600">{depName}</div></div>
                 <div className="flex-grow flex items-center justify-center text-slate-400">
                     <span className="w-2 h-2 bg-slate-400 rounded-full"></span>
                     <div className="flex-grow border-t-2 border-dotted border-slate-300 mx-2"></div>
                     <span className="w-2 h-2 bg-slate-400 rounded-full"></span>
                 </div>
-                <div className="text-center"><div className="text-2xl font-bold text-slate-800">{train.arr_time.substring(0,2)}:{train.arr_time.substring(2,4)}</div><div className="text-sm text-slate-600">{train.arr_station_name || train.arr_name}</div></div>
+                <div className="text-center"><div className="text-2xl font-bold text-slate-800">{train.arr_time.substring(0,2)}:{train.arr_time.substring(2,4)}</div><div className="text-sm text-slate-600">{arrName}</div></div>
             </div>
             <div className="border-t pt-3 flex gap-2">
                 <SeatOption label="일반실" value="GENERAL" state={train.general_seat_state || (isGeneralAvailable ? '예약가능' : '매진')} available={isGeneralAvailable} selectedSeat={selectedSeat} setSelectedSeat={setSelectedSeat} />
@@ -901,48 +933,13 @@ function EmptyReservations() {
 }
 
 function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask, isLoading }) {
-    const srtList = reservations.srt_reservations || [];
-    const ktxList = reservations.ktx_reservations || [];
-    const srtError = reservations.srt_error;
-    const ktxError = reservations.ktx_error;
+    const list = reservations.reservations || reservations.ktx_reservations || reservations.srt_reservations || [];
+    const error = reservations.error || reservations.ktx_error || reservations.srt_error;
 
-    const hasSrtReservations = srtList.length > 0;
-    const hasKtxReservations = ktxList.length > 0;
-
-    if (!hasSrtReservations && !hasKtxReservations && !srtError && !ktxError && (!bgTasks || bgTasks.length === 0)) {
+    if ((!list || list.length === 0) && !error && (!bgTasks || bgTasks.length === 0)) {
         return <EmptyReservations />;
     }
 
-    const renderList = (type, list, error) => {
-        if (error) {
-            return (
-                 <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
-                    <p className="text-red-500 p-4 bg-red-50 rounded-lg">{type}: {error}</p>
-                 </div>
-            );
-        }
-        if (!list || list.length === 0) return null;
-
-        return (
-            <div className="mb-8">
-                <h2 className="text-2xl font-bold text-slate-800 mb-3">{type}</h2>
-                <div className="space-y-4">
-                    {list.map((r, i) => (
-                        <ReservationCard 
-                            key={`${type}-${i}`}
-                            reservation={r}
-                            type={type}
-                            onCancel={onCancel}
-                            onPay={onPay}
-                            isLoading={isLoading}
-                        />
-                     ))}
-                </div>
-            </div>
-        );
-    }
-    
     return (
         <div>
             {bgTasks && bgTasks.length > 0 && (
@@ -958,7 +955,7 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
                                     <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700 animate-pulse">자동 예매 중</span>
                                 </div>
                                 <div className="flex justify-between items-baseline mb-2">
-                                    <span className="font-bold text-lg text-slate-700">{task.train_type} {task.train_number}</span>
+                                    <span className="font-bold text-lg text-slate-700">{task.train_type || 'KTX'} {task.train_number}</span>
                                     {task.adults && <span className="text-sm text-slate-500 font-medium">{task.seat_type === 'GENERAL' ? '일반실' : '특실'} / 성인 {task.adults}명</span>}
                                 </div>
                                 <div className="text-center font-bold text-slate-800">{task.dep} → {task.arr}</div>
@@ -970,8 +967,29 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
                     </div>
                 </div>
             )}
-            {renderList('SRT', srtList, srtError)}
-            {renderList('KTX', ktxList, ktxError)}
+            {error && (
+                <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-3">예매 내역</h2>
+                    <p className="text-red-500 p-4 bg-red-50 rounded-lg">{error}</p>
+                </div>
+            )}
+            {list && list.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-3">통합 예매 내역</h2>
+                    <div className="space-y-4">
+                        {list.map((r, i) => (
+                            <ReservationCard 
+                                key={`res-${i}`}
+                                reservation={r}
+                                type={r.train_name || r.train_type_name || 'KTX'}
+                                onCancel={onCancel}
+                                onPay={onPay}
+                                isLoading={isLoading}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -1127,7 +1145,6 @@ function SettingsScreen() {
         if (window.Notification) {
             let permission = window.Notification.permission;
             
-            // 아직 권한을 결정하지 않은 상태라면 시스템 팝업을 띄워 요청
             if (permission === 'default' || (permission !== 'granted' && permission !== 'denied')) {
                 permission = await window.Notification.requestPermission();
             }
@@ -1153,34 +1170,30 @@ function SettingsScreen() {
     const [credentials, setCredentials] = useState({
         ktxId: '',
         ktxPw: '',
-        srtId: '',
-        srtPw: '',
         notifyEmail: ''
     });
     const [message, setMessage] = useState('');
 
     useEffect(() => {
         const saved = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-        
+        const ktxId = saved.ktxId || saved.srtId || '';
+        const ktxPw = saved.ktxPw || saved.srtPw || '';
+
         const fetchDefaults = async () => {
             try {
                 const response = await fetch('/api/config');
                 const defaults = await response.json();
                 
                 setCredentials({
-                    ktxId: saved.ktxId || defaults.ktxId || '',
-                    ktxPw: saved.ktxPw || defaults.ktxPw || '',
-                    srtId: saved.srtId || defaults.srtId || '',
-                    srtPw: saved.srtPw || defaults.srtPw || '',
+                    ktxId: ktxId || defaults.ktxId || defaults.srtId || '',
+                    ktxPw: ktxPw || defaults.ktxPw || defaults.srtPw || '',
                     notifyEmail: saved.notifyEmail || ''
                 });
             } catch (e) {
                 console.error("Failed to fetch default config", e);
                 setCredentials({
-                    ktxId: saved.ktxId || '',
-                    ktxPw: saved.ktxPw || '',
-                    srtId: saved.srtId || '',
-                    srtPw: saved.srtPw || '',
+                    ktxId: ktxId || '',
+                    ktxPw: ktxPw || '',
                     notifyEmail: saved.notifyEmail || ''
                 });
             }
@@ -1195,7 +1208,12 @@ function SettingsScreen() {
     };
 
     const handleSave = () => {
-        localStorage.setItem('trainCredentials', JSON.stringify(credentials));
+        const toSave = {
+            ...credentials,
+            srtId: credentials.ktxId,
+            srtPw: credentials.ktxPw
+        };
+        localStorage.setItem('trainCredentials', JSON.stringify(toSave));
         setMessage('설정이 저장되었습니다.');
         setTimeout(() => setMessage(''), 3000);
     };
@@ -1205,10 +1223,18 @@ function SettingsScreen() {
             <h1 className="text-2xl font-bold text-slate-800">계정 관리</h1>
             
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
-                <h2 className="text-lg font-bold text-blue-600 flex items-center gap-2">
-                    <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
-                    KTX (코레일)
-                </h2>
+                <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-blue-600 flex items-center gap-2">
+                        <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
+                        코레일 (고속철도 통합 계정)
+                    </h2>
+                    <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-2.5 py-1 rounded-full border border-blue-100">
+                        KTX · 수서 통합
+                    </span>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                    KTX와 SRT가 코레일로 통합되었습니다. 코레일 멤버십 계정 하나로 수서발 열차를 포함한 모든 고속철도를 예매할 수 있습니다.
+                </p>
                 <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-600">멤버십 번호 / 이메일 / 전화번호</label>
                     <input 
@@ -1217,7 +1243,7 @@ function SettingsScreen() {
                         value={credentials.ktxId}
                         onChange={handleChange}
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="아이디 입력"
+                        placeholder="아이디 또는 멤버십 번호 입력"
                     />
                 </div>
                 <div className="space-y-2">
@@ -1228,35 +1254,6 @@ function SettingsScreen() {
                         value={credentials.ktxPw}
                         onChange={handleChange}
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="비밀번호 입력"
-                    />
-                </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
-                <h2 className="text-lg font-bold text-purple-600 flex items-center gap-2">
-                    <span className="w-2 h-6 bg-purple-600 rounded-full"></span>
-                    SRT (에스알)
-                </h2>
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-600">이메일 / 회원번호 / 전화번호</label>
-                    <input 
-                        type="text" 
-                        name="srtId"
-                        value={credentials.srtId}
-                        onChange={handleChange}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="아이디 입력"
-                    />
-                </div>
-                <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-600">비밀번호</label>
-                    <input 
-                        type="password" 
-                        name="srtPw"
-                        value={credentials.srtPw}
-                        onChange={handleChange}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                         placeholder="비밀번호 입력"
                     />
                 </div>
@@ -1334,16 +1331,16 @@ function SettingsScreen() {
                     💡 열차 예매 서비스 이용 가이드
                 </h2>
                 <div className="text-sm text-slate-600 space-y-3 leading-relaxed">
-                    <p>1. <strong>계정 설정:</strong> 상단 입력란에 본인의 KTX(코레일) 및 SRT(에스알) 계정 정보를 입력하고 <strong>[설정 저장하기]</strong>를 누르세요.</p>
+                    <p>1. <strong>계정 설정:</strong> 상단 입력란에 본인의 코레일(통합 멤버십) 계정 정보를 입력하고 <strong>[설정 저장하기]</strong>를 누르세요.</p>
                     <p className="text-xs text-slate-500 pl-4 -mt-2">
                         * 입력하신 계정 정보는 서버에 저장되지 않고, 사용하시는 <strong>개별 브라우저 내부(localStorage)</strong>에만 안전하게 보관됩니다.
                     </p>
                     
-                    <p>2. <strong>열차 조회 및 예매:</strong> 출발/도착역, 날짜, 인원을 선택하여 열차를 조회하세요.</p>
+                    <p>2. <strong>열차 조회 및 예매:</strong> 출발/도착역, 날짜, 인원을 선택하여 열차를 조회하세요. 수서역을 포함한 모든 고속철도를 한 번에 조회할 수 있습니다.</p>
                     
                     <p>3. <strong>자동 예매 시도 (취소표 대기):</strong> 원하는 열차가 매진된 경우 <strong>[자동 예매 시도]</strong>를 누르면, 취소표가 발생할 때까지 5초 간격으로 시스템이 자동 재시도합니다. (예매 성공 시 브라우저 알림 및 이메일 알림이 발송됩니다.)</p>
                     
-                    <p>4. <strong>결제 및 취소/환불:</strong> 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱이나 SRT 앱</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.</p>
+                    <p>4. <strong>결제 및 취소/환불:</strong> 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱 또는 레츠코레일 홈페이지</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.</p>
                 </div>
             </div>
         </div>

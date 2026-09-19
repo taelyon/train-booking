@@ -1,16 +1,19 @@
+from __future__ import annotations
 import base64
 try:
-    import curl_cffi
+    from curl_cffi.requests import Session as CurlSession
     HAS_CURL_CFFI = True
 except ImportError:
-    import requests
+    CurlSession = None
     HAS_CURL_CFFI = False
+import requests
 
 print(f"[시작] curl_cffi 사용 여부: {HAS_CURL_CFFI}" + (" (Chrome TLS 위장 활성화)" if HAS_CURL_CFFI else " (requests 폴백 - 매크로 탐지 위험!)"))
 import itertools
 import json
 import re
-import time as time_mod
+import time
+time_mod = time
 import uuid
 import random
 from Crypto.Cipher import AES
@@ -188,12 +191,12 @@ class Schedule:
         self.run_date = data.get("h_run_dt")
 
     def __repr__(self):
-        dep_time = f"{self.dep_time[:2]}:{self.dep_time[2:4]}"
-        arr_time = f"{self.arr_time[:2]}:{self.arr_time[2:4]}"
+        dep_time = f"{self.dep_time[:2]}:{self.dep_time[2:4]}" if self.dep_time and len(self.dep_time) >= 4 else str(self.dep_time or "")
+        arr_time = f"{self.arr_time[:2]}:{self.arr_time[2:4]}" if self.arr_time and len(self.arr_time) >= 4 else str(self.arr_time or "")
 
-        dep_date = f"{int(self.dep_date[4:6]):02d}/{int(self.dep_date[6:]):02d}"
+        dep_date = f"{int(self.dep_date[4:6]):02d}/{int(self.dep_date[6:]):02d}" if self.dep_date and len(self.dep_date) >= 8 else str(self.dep_date or "")
 
-        train_line = f"[{self.train_type_name[:3]} {self.train_no}]"
+        train_line = f"[{(self.train_type_name or '')[:3]} {self.train_no or ''}]"
 
         return (
             f"{train_line:<11s}"
@@ -210,30 +213,32 @@ class Train(Schedule):
         self.reserve_possible_name = data.get("h_rsv_psb_nm")
         self.special_seat = data.get("h_spe_rsv_cd")
         self.general_seat = data.get("h_gen_rsv_cd")
-        self.wait_reserve_flag = data.get("h_wait_rsv_flg")
-        if self.wait_reserve_flag:
-            self.wait_reserve_flag = int(self.wait_reserve_flag)
+        flag = data.get("h_wait_rsv_flg")
+        try:
+            self.wait_reserve_flag = int(flag) if flag is not None and str(flag).strip() != "" else None
+        except (ValueError, TypeError):
+            self.wait_reserve_flag = None
 
     def __repr__(self):
         repr_str = super().__repr__()
 
-        dep_time = f"{self.dep_time[:2]}:{self.dep_time[2:4]}"
-        arr_time = f"{self.arr_time[:2]}:{self.arr_time[2:4]}"
-
-        duration = (int(self.arr_time[:2]) * 60 + int(self.arr_time[2:4])) - (
-            int(self.dep_time[:2]) * 60 + int(self.dep_time[2:4])
-        )
-
-        if duration < 0:
-            duration += 24 * 60
+        if self.dep_time and self.arr_time and len(self.dep_time) >= 4 and len(self.arr_time) >= 4:
+            duration = (int(self.arr_time[:2]) * 60 + int(self.arr_time[2:4])) - (
+                int(self.dep_time[:2]) * 60 + int(self.dep_time[2:4])
+            )
+            if duration < 0:
+                duration += 24 * 60
+            dur_str = f" ({duration:>3d}분)"
+        else:
+            dur_str = ""
 
         if self.reserve_possible_name:
             # 괄호 없이 속성(property)으로 호출하도록 수정된 부분입니다.
             repr_str += f"  특실 {'가능' if self.has_special_seat else '매진'}"
             repr_str += f", 일반실 {'가능' if self.has_general_seat else '매진'}"
-            if self.wait_reserve_flag >= 0:
+            if self.wait_reserve_flag is not None and self.wait_reserve_flag >= 0:
                 repr_str += f", 예약대기 {'가능' if self.has_general_waiting_list() else '매진'}"
-        repr_str += f" ({duration:>3d}분)"
+        repr_str += dur_str
         return repr_str
 
     @property
@@ -254,6 +259,61 @@ class Train(Schedule):
     def has_general_waiting_list(self):
         return self.wait_reserve_flag == 9
 
+    @property
+    def train_number(self):
+        return self.train_no
+
+    @property
+    def train_name(self):
+        return self.train_type_name
+
+    @property
+    def dep_station_name(self):
+        return self.dep_name
+
+    @property
+    def arr_station_name(self):
+        return self.arr_name
+
+    @property
+    def dep_station_code(self):
+        return self.dep_code
+
+    @property
+    def arr_station_code(self):
+        return self.arr_code
+
+    @property
+    def general_seat_available(self):
+        return self.has_general_seat
+
+    @property
+    def special_seat_available(self):
+        return self.has_special_seat
+
+    @property
+    def general_seat_state(self):
+        return "예약가능" if self.has_general_seat else "매진"
+
+    @property
+    def special_seat_state(self):
+        return "예약가능" if self.has_special_seat else "매진"
+
+    @property
+    def seat_available(self):
+        return self.has_seat
+
+    def reserve_standby_available(self):
+        return self.has_general_waiting_list()
+
+    @property
+    def reserve_wait_possible_code(self):
+        return self.wait_reserve_flag or 0
+
+    @property
+    def reserve_wait_possible_name(self):
+        return "예약대기신청" if self.has_general_waiting_list() else ""
+
 
 class Ticket(Train):
     """Train ticket information"""
@@ -262,7 +322,7 @@ class Ticket(Train):
         raw_data = data["ticket_list"][0]["train_info"][0]
         super().__init__(raw_data)
         self.seat_no_end = raw_data.get("h_seat_no_end")
-        self.seat_no_count = int(raw_data.get("h_seat_cnt"))
+        self.seat_no_count = int(raw_data.get("h_seat_cnt") or 0)
         self.buyer_name = raw_data.get("h_buy_ps_nm")
         self.sale_date = raw_data.get("h_orgtk_sale_dt")
         self.pnr_no = raw_data.get("h_pnr_no")
@@ -270,13 +330,13 @@ class Ticket(Train):
         self.sale_info2 = raw_data.get("h_orgtk_ret_sale_dt")
         self.sale_info3 = raw_data.get("h_orgtk_sale_sqno")
         self.sale_info4 = raw_data.get("h_orgtk_ret_pwd")
-        self.price = int(raw_data.get("h_rcvd_amt"))
+        self.price = int(raw_data.get("h_rcvd_amt") or 0)
         self.car_no = raw_data.get("h_srcar_no")
         self.seat_no = raw_data.get("h_seat_no")
         self.is_ticket = True
 
     def __repr__(self):
-        repr_str = super(Train, self).__repr__()
+        repr_str = super().__repr__()
         repr_str += f" => {self.car_no}호"
         if int(self.seat_no_count) != 1:
             repr_str += f" {self.seat_no}~{self.seat_no_end}"
@@ -293,6 +353,30 @@ class Ticket(Train):
             )
         )
 
+    @property
+    def reservation_number(self):
+        return self.pnr_no
+
+    @property
+    def total_cost(self):
+        return self.price
+
+    @property
+    def paid(self):
+        return True
+
+    @property
+    def seat_count(self):
+        return self.seat_no_count
+
+    @property
+    def dep_station_code(self):
+        return self.dep_code
+
+    @property
+    def arr_station_code(self):
+        return self.arr_code
+
 
 class Reservation(Train):
     """Train reservation information"""
@@ -302,10 +386,10 @@ class Reservation(Train):
         self.dep_date = data.get("h_run_dt")
         self.arr_date = data.get("h_run_dt")
         self.rsv_id = data.get("h_pnr_no")
-        self.seat_no_count = int(data.get("h_tot_seat_cnt"))
+        self.seat_no_count = int(data.get("h_tot_seat_cnt") or 0)
         self.buy_limit_date = data.get("h_ntisu_lmt_dt")
         self.buy_limit_time = data.get("h_ntisu_lmt_tm")
-        self.price = int(data.get("h_rsv_amt"))
+        self.price = int(data.get("h_rsv_amt") or 0)
         self.journey_no = data.get("txtJrnySqno", "001")
         self.journey_cnt = data.get("txtJrnyCnt", "01")
         self.rsv_chg_no = data.get("hidRsvChgNo", "00000")
@@ -321,13 +405,37 @@ class Reservation(Train):
         repr_str += f", {self.price}원({self.seat_no_count}석)"
         if self.is_waiting:
             repr_str += ", 예약대기"
-        else:
+        elif self.buy_limit_date and self.buy_limit_time and len(self.buy_limit_date) >= 8 and len(self.buy_limit_time) >= 4:
             buy_limit_time = f"{self.buy_limit_time[:2]}:{self.buy_limit_time[2:4]}"
             buy_limit_date = (
                 f"{int(self.buy_limit_date[4:6])}월 {int(self.buy_limit_date[6:])}일"
             )
             repr_str += f", 구입기한 {buy_limit_date} {buy_limit_time}"
         return repr_str
+
+    @property
+    def reservation_number(self):
+        return self.rsv_id
+
+    @property
+    def total_cost(self):
+        return self.price
+
+    @property
+    def paid(self):
+        return self.is_ticket
+
+    @property
+    def seat_count(self):
+        return self.seat_no_count
+
+    @property
+    def dep_station_code(self):
+        return self.dep_code
+
+    @property
+    def arr_station_code(self):
+        return self.arr_code
 
 
 class Seat:
@@ -359,6 +467,21 @@ class Seat:
 # Passenger classes
 class Passenger:
     """Base class for passengers"""
+    typecode: str = ""
+    count: int = 1
+    discount_type: str = "000"
+    card: str = ""
+    card_no: str = ""
+    card_pw: str = ""
+
+    def __init__(
+        self, count=1, discount_type="000", card="", card_no="", card_pw=""
+    ):
+        self.count = count
+        self.discount_type = discount_type
+        self.card = card
+        self.card_no = card_no
+        self.card_pw = card_pw
 
     def __init_internal__(
         self, typecode, count=1, discount_type="000", card="", card_no="", card_pw=""
@@ -372,6 +495,8 @@ class Passenger:
 
     @staticmethod
     def reduce(passenger_list):
+        if isinstance(passenger_list, Passenger):
+            passenger_list = [passenger_list]
         if not all(isinstance(x, Passenger) for x in passenger_list):
             raise TypeError("Passengers must be based on Passenger")
         groups = itertools.groupby(passenger_list, lambda x: x.group_key())
@@ -545,8 +670,8 @@ class NetFunnelHelper:
     }
 
     def __init__(self):
-        if HAS_CURL_CFFI:
-            self._session = curl_cffi.Session(impersonate="chrome131_android")
+        if HAS_CURL_CFFI and CurlSession:
+            self._session = CurlSession(impersonate="chrome131_android")
         else:
             self._session = requests.session()
         self._session.headers.update(self.DEFAULT_HEADERS)
@@ -600,7 +725,7 @@ class NetFunnelHelper:
         )
         return response.get("status"), response.get("key"), response.get("nwait")
 
-    def _build_params(self, opcode: str, key: str = None) -> dict:
+    def _build_params(self, opcode: str, key: str | None = None) -> dict:
         params = {"opcode": opcode}
 
         if opcode in (self.OP_CODE["getTidchkEnter"], self.OP_CODE["chkEnter"]):
@@ -634,9 +759,9 @@ class Korail:
     """Main Korail API interface"""
 
     def __init__(self, korail_id, korail_pw, auto_login=True, verbose=False):
-        if HAS_CURL_CFFI:
+        if HAS_CURL_CFFI and CurlSession:
             # impersonate 없이 사용 - Dalvik UA와 TLS 핑거프린트 일관성 유지
-            self._session = curl_cffi.Session()
+            self._session = CurlSession()
         else:
             self._session = requests.session()
         self._session.headers.update(DEFAULT_HEADERS)
@@ -839,10 +964,10 @@ class Korail:
             "txtSeatAttCd_3": "000",
             "txtSeatAttCd_4": "015",
             "ebizCrossCheck": "N",
-            "srtCheckYn": "N",  # SRT 함께 보기
+            "srtCheckYn": "Y",  # SRT 및 수서발 고속열차 함께 보기 (KTX/SRT 통합)
             "rtYn": "N",  # 왕복
             "adjStnScdlOfrFlg": "N",  # 인접역 보기
-            "mbCrdNo": self.membership_number,
+            "mbCrdNo": self.membership_number or "",
         }
         if sid:
             data["Sid"] = sid
@@ -870,7 +995,8 @@ class Korail:
             return trains
 
     def reserve(self, train, passengers=None, option=ReserveOption.GENERAL_FIRST):
-        reserving_seat = train.has_seat or train.wait_reserve_flag < 0
+        wait_flag = getattr(train, 'wait_reserve_flag', None)
+        reserving_seat = train.has_seat or (wait_flag is not None and wait_flag < 0)
         if reserving_seat:
             is_special_seat = {
                 ReserveOption.GENERAL_ONLY: False,
