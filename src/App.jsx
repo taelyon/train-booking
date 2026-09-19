@@ -136,9 +136,9 @@ export default function App() {
     const [activeTab, setActiveTab] = useState('search');
 
     return (
-        <div className="bg-slate-50 font-sans flex justify-center items-start">
+        <div className="bg-slate-50 font-sans flex justify-center items-start min-h-screen">
             <div className="w-full max-w-md bg-white min-h-screen shadow-lg flex flex-col">
-                <main className="flex-grow p-4 pb-28">
+                <main className="flex-grow px-4 pt-safe pb-safe">
                     <div className={activeTab === 'search' ? '' : 'hidden'}>
                         <SearchAndBookingFlow />
                     </div>
@@ -164,7 +164,7 @@ function BottomNav({ activeTab, setActiveTab }) {
     ];
 
     return (
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 shadow-[0_-1px_20px_rgba(0,0,0,0.08)] z-50">
+        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-slate-200 shadow-[0_-1px_20px_rgba(0,0,0,0.08)] z-50 bottom-nav-safe">
             <div className="flex justify-around items-center h-20">
                 {navItems.map(item => {
                     const isActive = activeTab === item.id;
@@ -624,34 +624,15 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
                         </span>
                     </div>
 
-                    {/* 주요 출발역 빠른 선택 칩 */}
-                    <div>
-                        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 text-xs scrollbar-none">
-                            <span className="text-slate-400 font-semibold flex-shrink-0">빠른선택:</span>
-                            {['수서', '서울', '용산', '광명', '동탄', '대전', '동대구', '부산', '광주송정'].map(stn => (
-                                <button
-                                    key={stn}
-                                    type="button"
-                                    onClick={() => setDepStation(stn)}
-                                    className={`px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition ${
-                                        depStation === stn ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                                    }`}
-                                >
-                                    {stn}
-                                </button>
-                            ))}
+                    <div className="relative bg-slate-50 rounded-lg p-4">
+                        <div className="flex items-center gap-2">
+                            <StationSelect label="출발" name="dep" stations={ALL_STATIONS} value={depStation} onChange={e => setDepStation(e.target.value)} />
+                            <button type="button" onClick={handleSwapStations} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
+                                <SwapIcon />
+                            </button>
+                            <StationSelect label="도착" name="arr" stations={ALL_STATIONS} value={arrStation} onChange={e => setArrStation(e.target.value)} />
                         </div>
-
-                        <div className="relative bg-slate-50 rounded-lg p-4">
-                            <div className="flex items-center gap-2">
-                                <StationSelect label="출발" name="dep" stations={ALL_STATIONS} value={depStation} onChange={e => setDepStation(e.target.value)} />
-                                <button type="button" onClick={handleSwapStations} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
-                                    <SwapIcon />
-                                </button>
-                                <StationSelect label="도착" name="arr" stations={ALL_STATIONS} value={arrStation} onChange={e => setArrStation(e.target.value)} />
-                            </div>
-                            <button type="button" onClick={handleAddFavorite} title="즐겨찾기에 추가" className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
-                        </div>
+                        <button type="button" onClick={handleAddFavorite} title="즐겨찾기에 추가" className="absolute -top-2 -right-2 bg-amber-400 text-amber-900 rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-500 transition shadow-md text-xl">★</button>
                     </div>
                     
                     <div>

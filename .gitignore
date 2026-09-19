@@ -39,3 +39,9 @@ pip-wheel-metadata/
 
 #Vercel
 .vercel
+
+# Caches & Logs
+.mypy_cache/
+.ruff_cache/
+logs/
+data/
