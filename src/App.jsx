@@ -600,9 +600,9 @@ function SearchForm({ onSubmit, isLoading, favorites, onAddFavorite, onRemoveFav
     };
 
     return (
-        <div className="space-y-6">
-            <div className="text-center">
-                <TrainIcon className="w-12 h-12 mx-auto text-blue-600 mb-2" />
+        <div className="space-y-3">
+            <div className="text-center mb-1">
+                <TrainIcon className="w-12 h-12 mx-auto text-blue-600 mb-1.5" />
                 <h1 className="text-3xl font-bold text-slate-800">어디로 떠나시나요?</h1>
             </div>
             
