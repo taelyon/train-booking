@@ -4,7 +4,7 @@
 
 @layer utilities {
   .pt-safe {
-    padding-top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    padding-top: max(2.5rem, calc(env(safe-area-inset-top, 0px) + 1.5rem));
   }
   .pb-safe {
     padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
