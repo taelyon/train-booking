@@ -4,6 +4,7 @@ from pywebpush import webpush, WebPushException # pywebpush 추가
 import sys
 import os
 import uuid
+import hashlib
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -44,8 +45,6 @@ handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
 app.logger.info('Train booking app started')
-
-push_subscription = None
 
 # 자동 예매 태스크 관리 전역 변수
 # 형태: { 'task_id': { 'status': 'running'|'stopped'|'success'|'failed', 'thread': <Thread>, 'details': {...} } }
@@ -117,31 +116,39 @@ def load_and_resume_tasks():
 import time as _time
 import threading
 
-_cached_clients = {
-    'ktx': {'client': None, 'login_time': 0},
-}
+NO_ACCOUNT_MESSAGE = "코레일 로그인 정보가 없습니다. 관리 탭에서 계정을 저장해 주세요."
+
+def account_key(auth):
+    """아이디와 비밀번호로 계정 식별 키를 만듭니다 (둘 중 하나라도 없으면 None).
+    세션 캐시, 작업 소유자 확인, 푸시 구독을 이 키로 구분하며 계정 정보 자체는 키에 남지 않습니다."""
+    user_id, user_pw = (auth or {}).get('ktx_id'), (auth or {}).get('ktx_pw')
+    if not (user_id and user_pw):
+        return None
+    return hashlib.sha256(f"{user_id}\n{user_pw}".encode('utf-8')).hexdigest()
+
+# 계정별 로그인 세션: { account_key: {'client': Korail, 'login_time': float} }
+_cached_clients = {}
 _CLIENT_TTL = 600  # 10분간 세션 유지
 _client_lock = threading.Lock()
 
 def get_ktx_client(force_login=False, user_id=None, user_pw=None):
-    """코레일(KTX/통합) 클라이언트를 캐싱하여 반복 로그인을 방지합니다."""
+    """계정별로 코레일 클라이언트를 캐싱하여 반복 로그인을 방지합니다.
+    아이디와 비밀번호가 모두 일치해야 세션을 재사용하며, 서버(.env) 계정으로 대신 로그인하지 않습니다."""
+    key = account_key({'ktx_id': user_id, 'ktx_pw': user_pw})
+    if key is None:
+        raise ValueError(NO_ACCOUNT_MESSAGE)
+
     with _client_lock:
-        cache = _cached_clients['ktx']
         now = _time.time()
+        for expired_key in [k for k, c in _cached_clients.items() if now - c['login_time'] >= _CLIENT_TTL]:
+            del _cached_clients[expired_key]
 
-        final_id = user_id or os.environ.get('KTX_ID') or os.environ.get('SRT_ID')
-        final_pw = user_pw or os.environ.get('KTX_PW') or os.environ.get('SRT_PW')
-
-        if not force_login and cache['client'] and getattr(cache['client'], 'logined', False) and cache.get('id') == final_id and (now - cache['login_time']) < _CLIENT_TTL:
+        cache = _cached_clients.get(key)
+        if not force_login and cache and getattr(cache['client'], 'logined', False):
             return cache['client']
-        
-        if not (final_id and final_pw):
-            raise ValueError("코레일 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.")
-        
-        client = ktx.Korail(final_id, final_pw)
-        cache['client'] = client
-        cache['id'] = final_id
-        cache['login_time'] = now
+
+        client = ktx.Korail(user_id, user_pw)
+        _cached_clients[key] = {'client': client, 'login_time': now}
         return client
 
 # 검색전용 캐싱 클라이언트 (로그인 없이 세션/기기ID만 유지)
@@ -209,64 +216,89 @@ def vapid_public_key():
         return "VAPID public key not configured.", 500
     return public_key
 
-@app.route('/api/config')
-def get_config():
-    ktx_id = os.environ.get('KTX_ID') or os.environ.get('SRT_ID', '')
-    ktx_pw = os.environ.get('KTX_PW') or os.environ.get('SRT_PW', '')
-    return jsonify({
-        'ktxId': ktx_id,
-        'ktxPw': ktx_pw,
-        'srtId': ktx_id,
-        'srtPw': ktx_pw
-    })
+# 계정별 푸시 구독: { account_key: [subscription, ...] }
+# 각자 자기 계정의 예매 알림만 받도록 계정 키로 나눠 저장합니다 (계정 정보 자체는 저장하지 않음).
+SUB_FILE = os.path.join(current_dir, '../data/push_subscriptions.json')
+push_subscriptions = {}
+_push_lock = threading.Lock()
 
-SUB_FILE = os.path.join(current_dir, '../data/subscription.json')
-
-def save_subscription():
+def save_subscriptions():
     try:
-        with open(SUB_FILE, 'w', encoding='utf-8') as f:
-            json.dump(push_subscription, f)
-    except: pass
+        with _push_lock:
+            tmp_file = SUB_FILE + '.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(push_subscriptions, f)
+            os.replace(tmp_file, SUB_FILE)
+    except Exception as e:
+        app.logger.error(f"Failed to save push subscriptions: {e}")
 
-def load_subscription():
-    global push_subscription
+def load_subscriptions():
+    global push_subscriptions
     if os.path.exists(SUB_FILE):
         try:
             with open(SUB_FILE, 'r', encoding='utf-8') as f:
-                push_subscription = json.load(f)
-        except: pass
+                push_subscriptions = json.load(f)
+        except Exception as e:
+            app.logger.error(f"Failed to load push subscriptions: {e}")
 
-load_subscription()
+load_subscriptions()
 
 @app.route('/api/subscribe', methods=['POST'])
 def subscribe():
-    global push_subscription
-    push_subscription = request.json
-    save_subscription()
-    app.logger.info("Subscription received and saved.")
+    key = account_key(get_auth_from_headers())
+    subscription = request.get_json(silent=True) or {}
+    endpoint = subscription.get('endpoint')
+    if key is None:
+        return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
+    if not endpoint:
+        return jsonify({'error_message': '푸시 구독 정보가 올바르지 않습니다.'}), 400
+
+    with _push_lock:
+        # 한 기기는 한 계정에만 연결 (기기에서 계정을 바꾸면 이전 계정의 알림은 더 이상 받지 않음)
+        for k in list(push_subscriptions):
+            push_subscriptions[k] = [sub for sub in push_subscriptions[k] if sub.get('endpoint') != endpoint]
+            if not push_subscriptions[k]:
+                del push_subscriptions[k]
+        push_subscriptions.setdefault(key, []).append(subscription)
+    save_subscriptions()
+    app.logger.info("Push subscription saved for account.")
     return jsonify({'success': True}), 201
 
-def send_push_notification(title, body):
-    global push_subscription
-    if push_subscription is None:
-        app.logger.warning("No push subscription available to send notification.")
+def send_push_notification(title, body, auth):
+    """해당 계정으로 구독한 기기들에만 푸시 알림을 보냅니다."""
+    key = account_key(auth)
+    with _push_lock:
+        subscriptions = list(push_subscriptions.get(key, [])) if key else []
+    if not subscriptions:
+        app.logger.info("No push subscription for this account.")
         return
 
-    try:
-        webpush(
-            subscription_info=push_subscription,
-            data=json.dumps({"title": title, "body": body}),
-            vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY"),
-            vapid_claims={"sub": os.environ.get("VAPID_ADMIN_EMAIL")}
-        )
-        app.logger.info("Push notification sent successfully.")
-    except WebPushException as ex:
-        app.logger.error(f"WebPushException: {ex}")
-        # 푸시 구독이 만료되었을 수 있으므로 삭제
-        if ex.response and ex.response.status_code == 410:
-            push_subscription = None
-    except Exception as e:
-        app.logger.error(f"An error occurred while sending push notification: {e}")
+    expired = []
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info=subscription,
+                data=json.dumps({"title": title, "body": body}),
+                vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY"),
+                vapid_claims={"sub": os.environ.get("VAPID_ADMIN_EMAIL")}
+            )
+            app.logger.info("Push notification sent successfully.")
+        except WebPushException as ex:
+            app.logger.error(f"WebPushException: {ex}")
+            # 만료되었거나 해지된 구독은 삭제 (Response 객체는 4xx일 때 거짓으로 평가되므로 None과 비교)
+            if ex.response is not None and ex.response.status_code in (404, 410):
+                expired.append(subscription.get('endpoint'))
+        except Exception as e:
+            app.logger.error(f"An error occurred while sending push notification: {e}")
+
+    if expired:
+        with _push_lock:
+            remaining = [sub for sub in push_subscriptions.get(key, []) if sub.get('endpoint') not in expired]
+            if remaining:
+                push_subscriptions[key] = remaining
+            else:
+                push_subscriptions.pop(key, None)
+        save_subscriptions()
 
 def get_auth_from_headers():
     """헤더에서 코레일 계정 정보를 추출합니다 (레거시 헤더 지원)."""
@@ -279,6 +311,11 @@ def get_auth_from_headers():
         'srt_pw': ktx_pw,
         'notify_email': request.headers.get('X-NOTIFY-EMAIL')
     }
+
+def owns_task(task, auth):
+    """요청한 계정(아이디+비밀번호)이 작업을 등록한 계정과 같은지 확인합니다."""
+    key = account_key(auth)
+    return key is not None and key == account_key(task.get('details', {}).get('auth'))
 
 @app.route('/api/search')
 def search():
@@ -378,6 +415,8 @@ def reserve():
         seat_type = form_data.get('seat_type', 'GENERAL')
 
         auth = get_auth_from_headers()
+        if account_key(auth) is None:
+            return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
         client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
         all_trains = client.search_train(
             dep=dep_station,
@@ -403,7 +442,8 @@ def reserve():
         train_display = f"{target_train.train_type_name} {target_train.train_no}"
         send_push_notification(
             title="✅ 예매 성공!",
-            body=f"{dep} → {arr} ({train_display}) 열차 예매에 성공했습니다."
+            body=f"{dep} → {arr} ({train_display}) 열차 예매에 성공했습니다.",
+            auth=auth
         )
         
         # 이메일 알림
@@ -482,7 +522,8 @@ def notify_auto_reserve_success(target_train, auth_dict, when_text, adults, seat
     # 푸시 알림
     send_push_notification(
         title="✅ 예매 성공!",
-        body=f"{d_name} → {a_name} ({train_display}) {source_label}에 성공했습니다."
+        body=f"{d_name} → {a_name} ({train_display}) {source_label}에 성공했습니다.",
+        auth=auth_dict
     )
 
     # 이메일 알림
@@ -896,8 +937,8 @@ def start_openrun():
             legs.append(return_leg)
 
         auth = get_auth_from_headers()
-        if not (auth.get('ktx_id') or os.environ.get('KTX_ID') or os.environ.get('SRT_ID')):
-            return jsonify({'error_message': '코레일 로그인 정보가 없습니다. 관리 탭에서 설정해 주세요.'}), 400
+        if account_key(auth) is None:
+            return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
 
         task_id = str(uuid.uuid4())
         task_details = {
@@ -957,7 +998,9 @@ def start_auto_reserve():
             return jsonify({'error_message': '자동 예매를 위한 필수 정보가 누락되었습니다.'}), 400
 
         auth = get_auth_from_headers()
-        
+        if account_key(auth) is None:
+            return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
+
         task_id = str(uuid.uuid4())
         task_details = {
             'train_type': train_type,
@@ -996,8 +1039,7 @@ def stop_auto_reserve():
     
     if task_id in active_auto_reserves:
         task = active_auto_reserves[task_id]
-        task_auth = task['details'].get('auth')
-        if not task_auth or task_auth == auth:
+        if owns_task(task, auth):
             task['status'] = 'stopped'
             task['message'] = '사용자가 중단함'
             if task_id in active_auto_reserves:
@@ -1041,8 +1083,7 @@ def auto_reserve_status():
     my_tasks = []
     
     for t_id, task in list(active_auto_reserves.items()):
-        task_auth = task['details'].get('auth')
-        if not task_auth or task_auth == auth:
+        if owns_task(task, auth):
             my_tasks.append({
                 'task_id': t_id,
                 'status': task['status'],
@@ -1067,8 +1108,7 @@ def ack_auto_reserve():
     auth = get_auth_from_headers()
     if task_id in active_auto_reserves:
         task = active_auto_reserves[task_id]
-        task_auth = task['details'].get('auth')
-        if not task_auth or task_auth == auth:
+        if owns_task(task, auth):
             del active_auto_reserves[task_id]
             save_tasks()
             return jsonify({'message': 'Task acknowledged and removed.'})
@@ -1110,6 +1150,8 @@ def pay():
             return jsonify({'error_message': "결제 요청에 필요한 예약번호가 누락되었습니다."}), 400
 
         auth = get_auth_from_headers()
+        if account_key(auth) is None:
+            return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
         client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
         reservations = client.reservations()
         target = next((r for r in reservations if r.rsv_id == pnr_no or getattr(r, 'pnr_no', None) == pnr_no), None)
@@ -1140,7 +1182,10 @@ def cancel():
         if not pnr_no:
             return jsonify({'error_message': "취소 요청에 필요한 예약번호가 누락되었습니다."}), 400
 
-        client = get_ktx_client()
+        auth = get_auth_from_headers()
+        if account_key(auth) is None:
+            return jsonify({'error_message': NO_ACCOUNT_MESSAGE}), 400
+        client = get_ktx_client(user_id=auth['ktx_id'], user_pw=auth['ktx_pw'])
         reservations = client.tickets() + client.reservations()
         target = next((r for r in reservations if (hasattr(r, 'pnr_no') and r.pnr_no == pnr_no) or (hasattr(r, 'rsv_id') and r.rsv_id == pnr_no)), None)
         

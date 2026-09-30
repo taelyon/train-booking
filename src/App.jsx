@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { subscribeUserToPush } from './push-notification';
+import { getAuthHeaders, getSavedCredentials } from './auth';
 
-// --- Auth Utils ---
-export const getAuthHeaders = () => {
-    const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-    const ktxId = credentials.ktxId || credentials.srtId || '';
-    const ktxPw = credentials.ktxPw || credentials.srtPw || '';
-    return {
-        'X-KTX-ID': ktxId,
-        'X-KTX-PW': ktxPw,
-        'X-SRT-ID': ktxId,
-        'X-SRT-PW': ktxPw,
-        'X-NOTIFY-EMAIL': credentials.notifyEmail || ''
-    };
-};
 
 // --- Icon Components ---
 const SearchIcon = ({ className }) => (
@@ -386,8 +374,8 @@ function SearchAndBookingFlow() {
     useEffect(() => {
         // 브라우저가 서비스 워커와 알림 기능을 지원하는지 확인
         if ('serviceWorker' in navigator && 'Notification' in window) {
-            // 사용자에게 아직 권한을 묻지 않은 상태('default')일 때만 요청
-            if (Notification.permission === 'default') {
+            // 아직 묻지 않았으면('default') 권한을 요청하고, 이미 허용된 기기는 현재 계정으로 다시 등록
+            if (Notification.permission !== 'denied') {
                 subscribeUserToPush();
             }
         }
@@ -547,17 +535,7 @@ function ReservationsScreen({ active }) {
         setError('');
         setMessage('');
         try {
-            const credentials = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-            const ktxId = credentials.ktxId || credentials.srtId || '';
-            const ktxPw = credentials.ktxPw || credentials.srtPw || '';
-            const response = await fetch('/api/reservations', {
-                headers: {
-                    'X-KTX-ID': ktxId,
-                    'X-KTX-PW': ktxPw,
-                    'X-SRT-ID': ktxId,
-                    'X-SRT-PW': ktxPw
-                }
-            });
+            const response = await fetch('/api/reservations', { headers: getAuthHeaders() });
             if (!response.ok) throw new Error('예매 내역을 불러오는데 실패했습니다.');
             const data = await response.json();
             setReservations(data);
@@ -1401,14 +1379,7 @@ function OpenRunScreen() {
 
 
     // 관리 탭에 저장된 계정 (탭 전환 때마다 다시 그려지므로 저장 직후 값도 반영됨)
-    const savedAccountId = (() => {
-        try {
-            const saved = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-            return saved.ktxId || saved.srtId || '';
-        } catch (e) {
-            return '';
-        }
-    })();
+    const savedAccountId = getSavedCredentials().ktxId;
 
     return (
         <div className="space-y-4">
@@ -1548,31 +1519,8 @@ function SettingsScreen() {
     const [message, setMessage] = useState('');
 
     useEffect(() => {
-        const saved = JSON.parse(localStorage.getItem('trainCredentials') || '{}');
-        const ktxId = saved.ktxId || saved.srtId || '';
-        const ktxPw = saved.ktxPw || saved.srtPw || '';
-
-        const fetchDefaults = async () => {
-            try {
-                const response = await fetch('/api/config');
-                const defaults = await response.json();
-
-                setCredentials({
-                    ktxId: ktxId || defaults.ktxId || defaults.srtId || '',
-                    ktxPw: ktxPw || defaults.ktxPw || defaults.srtPw || '',
-                    notifyEmail: saved.notifyEmail || ''
-                });
-            } catch (e) {
-                console.error("Failed to fetch default config", e);
-                setCredentials({
-                    ktxId: ktxId || '',
-                    ktxPw: ktxPw || '',
-                    notifyEmail: saved.notifyEmail || ''
-                });
-            }
-        };
-
-        fetchDefaults();
+        // 이 브라우저에 저장한 계정만 불러옴 (서버 계정을 미리 채우지 않음)
+        setCredentials(getSavedCredentials());
     }, []);
 
     const handleChange = (e) => {
@@ -1587,6 +1535,10 @@ function SettingsScreen() {
             srtPw: credentials.ktxPw
         };
         localStorage.setItem('trainCredentials', JSON.stringify(toSave));
+        // 푸시 알림을 허용한 기기는 새 계정으로 다시 등록하여 이 계정의 알림만 받도록 함
+        if (window.Notification && window.Notification.permission === 'granted') {
+            subscribeUserToPush();
+        }
         setMessage('설정이 저장되었습니다.');
         setTimeout(() => setMessage(''), 3000);
     };
@@ -1624,7 +1576,7 @@ function SettingsScreen() {
                         className={ui.input}
                         placeholder="비밀번호 입력"
                     />
-                    <p className={ui.hint}>열차 조회·예매와 자동 예매, 명절 오픈런 모두 이 계정을 사용합니다.</p>
+                    <p className={ui.hint}>열차 조회·예매와 자동 예매, 명절 오픈런 모두 이 계정을 사용합니다. 이 브라우저에만 저장되며 앱을 함께 쓰는 다른 사람과 공유되지 않으니, 각자 자기 계정을 저장해 주세요.</p>
                 </div>
             </section>
 
