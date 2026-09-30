@@ -625,11 +625,18 @@ def get_openrun_legs(details):
     """오픈런 구간 목록을 반환합니다. 왕복 도입 전에 저장된 편도 작업도 구간 1개로 변환합니다."""
     if not details.get('legs'):
         leg = {field: details.get(field) for field in OPENRUN_LEG_FIELDS}
-        leg.update(label='가는 편', status='pending', reserved_train=details.get('reserved_train', ''))
+        leg.update(status='pending', reserved_train=details.get('reserved_train', ''))
         if leg['reserved_train']:
             leg['status'] = 'reserved'
         details['legs'] = [leg]
+    if details.get('trip_type') != 'round':
+        # 편도는 '가는 편' 같은 구간 이름 없이 표시
+        details['legs'][0]['label'] = ''
     return details['legs']
+
+def leg_prefix(leg):
+    """메시지 앞에 붙일 구간 이름 ('가는 편 ', '오는 편 ', 편도는 빈 문자열)"""
+    return f"{leg['label']} " if leg.get('label') else ''
 
 def leg_open_dt(leg):
     return parse_kst(leg['open_date'], leg['open_time'])
@@ -718,7 +725,7 @@ def openrun_worker(task_id, details):
         app.logger.error(f"Openrun task {task_id} failed: {message}")
 
     def finish():
-        reserved = [f"{leg['label']} {leg['reserved_train']}" for leg in legs if leg['status'] == 'reserved']
+        reserved = [f"{leg_prefix(leg)}{leg['reserved_train']}" for leg in legs if leg['status'] == 'reserved']
         missed = [leg['label'] for leg in legs if leg['status'] == 'expired']
         if not reserved:
             fail("희망 시간대의 열차가 모두 출발하여 오픈런을 종료했습니다.")
@@ -729,7 +736,7 @@ def openrun_worker(task_id, details):
             task['message'] += f" ({', '.join(missed)}은 희망 시간대 열차가 모두 출발하여 예매하지 못했습니다)"
         app.logger.info(f"Openrun task {task_id} finished: {task['message']}")
 
-    app.logger.info(f"Openrun task {task_id} scheduled: " + ", ".join(f"{leg['label']} {leg_open_dt(leg).isoformat()}" for leg in legs))
+    app.logger.info(f"Openrun task {task_id} scheduled: " + ", ".join(f"{leg_prefix(leg)}{leg_open_dt(leg).isoformat()}" for leg in legs))
 
     force_login = False
     logged_in_for = None  # 사전 로그인을 마친 오픈 시각
@@ -787,8 +794,9 @@ def openrun_worker(task_id, details):
                 leg['reserved_train'] = target_train.train_no
                 save_tasks()
                 when_text = f"{leg['date']} {target_train.dep_time[:2]}:{target_train.dep_time[2:4]} 출발"
-                notify_auto_reserve_success(target_train, auth_dict, when_text, details['adults'], seat_label, f"명절 오픈런({leg['label']}) 예매")
-                app.logger.info(f"Openrun task {task_id} {leg['label']} reserved: {target_train.train_no}")
+                source_label = f"명절 오픈런({leg['label']}) 예매" if leg.get('label') else "명절 오픈런 예매"
+                notify_auto_reserve_success(target_train, auth_dict, when_text, details['adults'], seat_label, source_label)
+                app.logger.info(f"Openrun task {task_id} {leg_prefix(leg)}reserved: {target_train.train_no}")
 
             last_error, same_error_count = None, 0
             if any(leg['status'] == 'pending' for leg in active):
@@ -828,7 +836,8 @@ class OpenrunInputError(ValueError):
     pass
 
 def build_openrun_leg(form_data, prefix, label, dep, arr):
-    """폼 입력에서 오픈런 구간 하나를 만들고 검증합니다."""
+    """폼 입력에서 오픈런 구간 하나를 만들고 검증합니다. 예매 오픈 일시는 모든 구간이 공통으로 사용합니다."""
+    name = f"{label} " if label else ''
     leg = {
         'label': label,
         'dep': dep,
@@ -836,26 +845,26 @@ def build_openrun_leg(form_data, prefix, label, dep, arr):
         'date': form_data.get(f'{prefix}date', ''),
         'time': form_data.get(f'{prefix}time', ''),
         'end_time': form_data.get(f'{prefix}end_time', ''),
-        'open_date': form_data.get(f'{prefix}open_date', ''),
-        'open_time': form_data.get(f'{prefix}open_time', ''),
+        'open_date': form_data.get('open_date', ''),
+        'open_time': form_data.get('open_time', ''),
         'preferred_trains': parse_preferred_trains(form_data.get(f'{prefix}preferred_trains', '')),
         'status': 'pending',
         'reserved_train': '',
     }
     if not all(leg[field] for field in ('date', 'time', 'end_time', 'open_date', 'open_time')):
-        raise OpenrunInputError(f'{label}의 필수 정보가 누락되었습니다.')
+        raise OpenrunInputError(f'{name}필수 정보가 누락되었습니다.')
     try:
         open_dt = leg_open_dt(leg)
         first_departure = parse_kst(leg['date'], leg['time'])
         last_departure = leg_last_departure(leg)
     except ValueError:
-        raise OpenrunInputError(f'{label}의 날짜 또는 시간 형식이 올바르지 않습니다.')
+        raise OpenrunInputError(f'{name}날짜 또는 시간 형식이 올바르지 않습니다.')
     if last_departure < first_departure:
-        raise OpenrunInputError(f'{label} 희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.')
+        raise OpenrunInputError(f'{name}희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.')
     if last_departure <= datetime.now(KST):
-        raise OpenrunInputError(f'{label} 희망 출발 시간대가 이미 지났습니다.')
+        raise OpenrunInputError(f'{name}희망 출발 시간대가 이미 지났습니다.')
     if open_dt >= last_departure:
-        raise OpenrunInputError(f'{label} 예매 오픈 일시가 희망 출발 시간 이후입니다.')
+        raise OpenrunInputError(f'{name}예매 오픈 일시가 희망 출발 시간 이후입니다.')
     return leg
 
 @app.route('/api/start-openrun', methods=['POST'])
@@ -879,7 +888,7 @@ def start_openrun():
         if not 1 <= adults <= 9 or not 1 <= burst_minutes <= 180:
             return jsonify({'error_message': '인원 또는 집중 시도 시간이 올바르지 않습니다.'}), 400
 
-        legs = [build_openrun_leg(form_data, '', '가는 편', dep, arr)]
+        legs = [build_openrun_leg(form_data, '', '가는 편' if trip_type == 'round' else '', dep, arr)]
         if trip_type == 'round':
             return_leg = build_openrun_leg(form_data, 'return_', '오는 편', arr, dep)
             if parse_kst(return_leg['date'], return_leg['time']) < parse_kst(legs[0]['date'], legs[0]['time']):

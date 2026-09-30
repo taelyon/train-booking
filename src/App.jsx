@@ -1148,8 +1148,6 @@ const makeOpenRunLeg = (overrides = {}) => ({
     time: '06:00',
     endTime: '12:00',
     preferredTrains: '',
-    openDate: getKstToday(),
-    openTime: '07:00',
     ...overrides,
 });
 
@@ -1174,6 +1172,8 @@ function Countdown({ target }) {
 function OpenRunTaskCard({ task, onStop, isLoading }) {
     const badge = OPENRUN_PHASE_BADGES[task.phase] || OPENRUN_PHASE_BADGES.waiting;
     const legs = task.legs || [];
+    // 예매 오픈 일시는 공통이므로 한 번만 표시 (구간별로 다르게 저장된 이전 작업만 구간마다 표시)
+    const sameOpenAt = legs.every(leg => leg.open_at === legs[0]?.open_at);
 
     return (
         <div className="bg-white p-4 rounded-lg shadow-sm border border-red-200 space-y-3">
@@ -1184,10 +1184,10 @@ function OpenRunTaskCard({ task, onStop, isLoading }) {
                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${badge.className}`}>{badge.label}</span>
             </div>
             <div className="text-sm text-slate-500 font-medium text-right">{OPENRUN_SEAT_LABELS[task.seat_type] || '일반실'} / 성인 {task.adults}명</div>
-            {legs.map(leg => (
-                <div key={leg.label} className="bg-slate-50 rounded-md p-3 text-sm text-slate-700 space-y-1">
+            {legs.map((leg, index) => (
+                <div key={index} className="bg-slate-50 rounded-md p-3 text-sm text-slate-700 space-y-1">
                     <div className="flex justify-between items-baseline gap-2">
-                        <span className="font-bold text-slate-800">{leg.label} · {leg.dep} → {leg.arr}</span>
+                        <span className="font-bold text-slate-800">{leg.label ? `${leg.label} · ` : ''}{leg.dep} → {leg.arr}</span>
                         {leg.status === 'reserved' && <span className="text-xs font-bold text-green-700 whitespace-nowrap">예매 완료 {leg.reserved_train}</span>}
                         {leg.status === 'expired' && <span className="text-xs font-bold text-slate-400 whitespace-nowrap">시간 초과</span>}
                     </div>
@@ -1195,10 +1195,12 @@ function OpenRunTaskCard({ task, onStop, isLoading }) {
                         <span>탑승</span>
                         <span>{formatShortDate(leg.date)} {leg.time}~{leg.end_time}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span>예매 오픈</span>
-                        <span>{formatOpenAt(leg.open_at)}</span>
-                    </div>
+                    {!sameOpenAt && (
+                        <div className="flex justify-between">
+                            <span>예매 오픈</span>
+                            <span>{formatOpenAt(leg.open_at)}</span>
+                        </div>
+                    )}
                     {leg.preferred_trains?.length > 0 && (
                         <div className="flex justify-between">
                             <span>지정 열차</span>
@@ -1207,6 +1209,12 @@ function OpenRunTaskCard({ task, onStop, isLoading }) {
                     )}
                 </div>
             ))}
+            {sameOpenAt && legs.length > 0 && (
+                <div className="flex justify-between text-sm text-slate-700 px-1">
+                    <span>예매 오픈</span>
+                    <span className="font-semibold">{formatOpenAt(legs[0].open_at)}</span>
+                </div>
+            )}
             {task.phase === 'waiting' && (
                 <div className="flex justify-between text-sm text-slate-700 px-1">
                     <span>오픈까지 남은 시간</span>
@@ -1224,11 +1232,13 @@ function OpenRunLegFields({ title, route, leg, onChange }) {
     const update = (field) => (e) => onChange({ ...leg, [field]: e.target.value });
 
     return (
-        <div className="border border-slate-200 rounded-lg p-3 space-y-3">
-            <div className="flex justify-between items-baseline">
-                <h3 className="font-bold text-slate-800">{title}</h3>
-                <span className="text-sm text-slate-500">{route}</span>
-            </div>
+        <div className={title ? "border border-slate-200 rounded-lg p-3 space-y-3" : "space-y-3"}>
+            {title && (
+                <div className="flex justify-between items-baseline">
+                    <h3 className="font-bold text-slate-800">{title}</h3>
+                    <span className="text-sm text-slate-500">{route}</span>
+                </div>
+            )}
 
             <div>
                 <label className="block text-slate-700 text-sm font-bold mb-1">탑승일</label>
@@ -1248,14 +1258,6 @@ function OpenRunLegFields({ title, route, leg, onChange }) {
                 <label className="block text-slate-700 text-sm font-bold mb-1">특정 열차만 예매 (선택)</label>
                 <input type="text" value={leg.preferredTrains} onChange={update('preferredTrains')} placeholder="예: 101, 103 (입력 순서대로 우선 시도)" className={`${inputClass} w-full`} />
             </div>
-
-            <div>
-                <label className="block text-slate-700 text-sm font-bold mb-1">예매 오픈 일시</label>
-                <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex-[3] min-w-[9.5rem]"><input type="date" value={leg.openDate} onChange={update('openDate')} required className={inputClass} /></div>
-                    <div className="flex-[2] min-w-[7.5rem]"><input type="time" value={leg.openTime} onChange={update('openTime')} required className={inputClass} /></div>
-                </div>
-            </div>
         </div>
     );
 }
@@ -1274,6 +1276,8 @@ function OpenRunScreen() {
     const [arrStation, setArrStation] = useState(favorites[0]?.arr || '부산');
     const [outbound, setOutbound] = useState(() => makeOpenRunLeg());
     const [inbound, setInbound] = useState(null);
+    const [openDate, setOpenDate] = useState(getKstToday());
+    const [openTime, setOpenTime] = useState('07:00');
     const [adults, setAdults] = useState('1');
     const [seatType, setSeatType] = useState('GENERAL');
     const [burstMinutes, setBurstMinutes] = useState('30');
@@ -1283,29 +1287,23 @@ function OpenRunScreen() {
 
     const handleTripTypeChange = (type) => {
         setTripType(type);
-        // 오는 편은 처음 왕복을 선택할 때 가는 편 날짜/오픈 일시를 기본값으로 채움
+        // 오는 편은 처음 왕복을 선택할 때 가는 편 탑승일을 기본값으로 채움
         if (type === 'round' && !inbound) {
-            setInbound(makeOpenRunLeg({
-                date: outbound.date,
-                time: '14:00',
-                endTime: '22:00',
-                openDate: outbound.openDate,
-                openTime: outbound.openTime,
-            }));
+            setInbound(makeOpenRunLeg({ date: outbound.date, time: '14:00', endTime: '22:00' }));
         }
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        const legs = tripType === 'round' ? [['가는 편', outbound], ['오는 편', inbound]] : [['가는 편', outbound]];
+        const legs = tripType === 'round' ? [['가는 편 ', outbound], ['오는 편 ', inbound]] : [['', outbound]];
         if (depStation === arrStation) {
             setError('출발역과 도착역이 같습니다.');
             return;
         }
         for (const [label, leg] of legs) {
             if (leg.endTime < leg.time) {
-                setError(`${label} 희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.`);
+                setError(`${label}희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.`);
                 return;
             }
         }
@@ -1315,8 +1313,6 @@ function OpenRunScreen() {
             [`${prefix}time`]: leg.time,
             [`${prefix}end_time`]: leg.endTime,
             [`${prefix}preferred_trains`]: leg.preferredTrains,
-            [`${prefix}open_date`]: leg.openDate,
-            [`${prefix}open_time`]: leg.openTime,
         });
 
         setIsSubmitting(true);
@@ -1328,6 +1324,8 @@ function OpenRunScreen() {
                 adults,
                 seat_type: seatType,
                 burst_minutes: burstMinutes,
+                open_date: openDate,
+                open_time: openTime,
                 ...toParams(outbound, ''),
                 ...(tripType === 'round' ? toParams(inbound, 'return_') : {}),
             });
@@ -1404,11 +1402,20 @@ function OpenRunScreen() {
                         </div>
                     )}
 
-                    <OpenRunLegFields title="가는 편" route={`${depStation} → ${arrStation}`} leg={outbound} onChange={setOutbound} />
+                    <OpenRunLegFields title={tripType === 'round' ? '가는 편' : ''} route={`${depStation} → ${arrStation}`} leg={outbound} onChange={setOutbound} />
                     {tripType === 'round' && inbound && (
                         <OpenRunLegFields title="오는 편" route={`${arrStation} → ${depStation}`} leg={inbound} onChange={setInbound} />
                     )}
-                    <p className="text-xs text-slate-500 -mt-2">시간대 안에서 좌석이 남은 가장 이른 열차를 예매합니다. 예매 오픈 일시는 코레일 공지사항에서 확인해 입력하세요.</p>
+                    <p className="text-xs text-slate-500 -mt-2">시간대 안에서 좌석이 남은 가장 이른 열차를 예매합니다.</p>
+
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">예매 오픈 일시</label>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex-[3] min-w-[9.5rem]"><input type="date" value={openDate} onChange={e => setOpenDate(e.target.value)} required className="date-input px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                            <div className="flex-[2] min-w-[7.5rem]"><input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} required className="date-input px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">{tripType === 'round' ? '가는 편과 오는 편 모두 이 시각부터 예매를 시도합니다. ' : ''}코레일 공지사항에서 확인해 입력하세요.</p>
+                    </div>
 
                     <div className="flex gap-2">
                         <div className="flex-1 min-w-0">
