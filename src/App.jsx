@@ -80,10 +80,13 @@ const StarIcon = ({ className }) => (
 
 // --- UI 공통 스타일 ---
 // 모든 화면이 같은 카드/입력/버튼 모양을 쓰도록 한 곳에서 관리합니다.
+const INPUT_BASE = 'w-full px-3 bg-white border border-slate-300 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition';
 const ui = {
     card: 'bg-white rounded-2xl border border-slate-200 shadow-sm',
     label: 'block text-sm font-semibold text-slate-700 mb-1.5',
-    input: 'w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition',
+    input: `${INPUT_BASE} h-11`,
+    // 날짜/시간 입력은 높이를 고정하면 iOS Safari에서 값이 위로 붙으므로, 패딩과 줄 높이로 같은 높이(44px)를 만듦
+    dateInput: `${INPUT_BASE} date-input py-[9px] leading-6`,
     hint: 'text-xs text-slate-500 mt-1.5 leading-relaxed',
     chip: 'inline-flex items-center gap-1 h-8 px-3 rounded-full border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 transition',
 };
@@ -246,8 +249,8 @@ function FavoriteChips({ favorites, onSelect, onRemove }) {
 function DateTimeFields({ date, time, onDateChange, onTimeChange, dateName, timeName }) {
     return (
         <div className="flex flex-wrap gap-2">
-            <div className="flex-[3] min-w-[9.5rem]"><input type="date" name={dateName} value={date} onChange={onDateChange} required className={`${ui.input} date-input`} /></div>
-            <div className="flex-[2] min-w-[8.5rem]"><input type="time" name={timeName} value={time} onChange={onTimeChange} required className={`${ui.input} date-input`} /></div>
+            <div className="flex-[3] min-w-[9.5rem]"><input type="date" name={dateName} value={date} onChange={onDateChange} required className={ui.dateInput} /></div>
+            <div className="flex-[2] min-w-[8.5rem]"><input type="time" name={timeName} value={time} onChange={onTimeChange} required className={ui.dateInput} /></div>
         </div>
     );
 }
@@ -1271,15 +1274,15 @@ function OpenRunLegFields({ title, route, leg, onChange }) {
 
             <div>
                 <label className={ui.label}>탑승일</label>
-                <input type="date" value={leg.date} onChange={update('date')} required className={`${ui.input} date-input`} />
+                <input type="date" value={leg.date} onChange={update('date')} required className={ui.dateInput} />
             </div>
 
             <div>
                 <label className={ui.label}>희망 출발 시간대</label>
                 <div className="flex items-center gap-1.5">
-                    <div className="flex-1 min-w-0"><input type="time" value={leg.time} onChange={update('time')} required className={`${ui.input} date-input`} /></div>
+                    <div className="flex-1 min-w-0"><input type="time" value={leg.time} onChange={update('time')} required className={ui.dateInput} /></div>
                     <span className="text-slate-400">~</span>
-                    <div className="flex-1 min-w-0"><input type="time" value={leg.endTime} onChange={update('endTime')} required className={`${ui.input} date-input`} /></div>
+                    <div className="flex-1 min-w-0"><input type="time" value={leg.endTime} onChange={update('endTime')} required className={ui.dateInput} /></div>
                 </div>
             </div>
 

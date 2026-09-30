@@ -26,7 +26,16 @@
     appearance: none;
     min-height: 2.75rem;
   }
+  /* iOS Safari가 값 영역에 주는 기본 여백을 없애고 줄 높이를 맞춰 세로 가운데에 오도록 함 */
   .date-input::-webkit-date-and-time-value {
     text-align: left;
+    margin: 0;
+    line-height: 1.5rem;
+    min-height: 1.5rem;
+  }
+  /* Chrome/안드로이드가 값 영역에 넣는 위아래 1px 여백 제거 (모든 브라우저에서 높이 44px로 통일) */
+  .date-input::-webkit-datetime-edit,
+  .date-input::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
   }
 }
