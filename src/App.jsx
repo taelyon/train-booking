@@ -66,6 +66,16 @@ const SettingsIcon = ({ className }) => (
     </svg>
 );
 
+const CalendarIcon = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+        <path d="M12 14v3l2 1"></path>
+    </svg>
+);
+
 const Modal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = '확인', cancelText = '취소', type = 'info' }) => {
     if (!isOpen) return null;
     return (
@@ -142,6 +152,9 @@ export default function App() {
                     <div className={activeTab === 'search' ? '' : 'hidden'}>
                         <SearchAndBookingFlow />
                     </div>
+                    <div className={activeTab === 'openrun' ? '' : 'hidden'}>
+                        <OpenRunScreen active={activeTab === 'openrun'} />
+                    </div>
                     <div className={activeTab === 'reservations' ? '' : 'hidden'}>
                         <ReservationsScreen active={activeTab === 'reservations'} />
                     </div>
@@ -159,6 +172,7 @@ export default function App() {
 function BottomNav({ activeTab, setActiveTab }) {
     const navItems = [
         { id: 'search', icon: SearchIcon, label: '열차 조회' },
+        { id: 'openrun', icon: CalendarIcon, label: '명절 오픈런' },
         { id: 'reservations', icon: TicketIcon, label: '예매 내역' },
         { id: 'settings', icon: SettingsIcon, label: '관리' },
     ];
@@ -534,7 +548,7 @@ function ReservationsScreen({ active }) {
             <Modal
                 isOpen={successModal.isOpen}
                 title="🎉 예매 성공!"
-                message={`축하합니다! ${successModal.task?.train_type} ${successModal.task?.train_number} 열차 예매에 성공했습니다.\n\n앱에 등록된 카드로 즉시 결제하시거나, 코레일/SRT 앱에서 발권해 주세요.`}
+                message={`축하합니다! ${successModal.task?.mode === 'openrun' ? '명절 오픈런으로 ' : ''}${successModal.task?.train_type} ${successModal.task?.train_number} 열차 예매에 성공했습니다.\n\n앱에 등록된 카드로 즉시 결제하시거나, 코레일/SRT 앱에서 발권해 주세요.`}
                 confirmText="확인"
                 type="success"
                 onConfirm={() => setSuccessModal({ isOpen: false, task: null })}
@@ -917,7 +931,9 @@ function ReservationsView({ reservations, bgTasks, onCancel, onPay, onStopBgTask
                 <div className="mb-8">
                     <h2 className="text-2xl font-bold text-slate-800 mb-3">진행 중인 자동 예매</h2>
                     <div className="space-y-4">
-                        {bgTasks.map(task => (
+                        {bgTasks.map(task => task.mode === 'openrun' ? (
+                            <OpenRunTaskCard key={task.task_id} task={task} onStop={onStopBgTask} isLoading={isLoading} />
+                        ) : (
                             <div key={task.task_id} className="bg-white p-4 rounded-lg shadow-sm border border-blue-200 space-y-3">
                                 <div className="flex justify-between items-center pb-3 border-b border-slate-100">
                                     <span className="text-sm font-semibold text-slate-600">
@@ -1103,6 +1119,366 @@ function EmptyResults({ searchParams, onBack }) {
                     <span className="ml-2">다시 검색하기</span>
                 </button>
             </div>
+        </div>
+    );
+}
+
+// --- 명절 오픈런 ---
+const OPENRUN_SEAT_LABELS = { GENERAL: '일반실', SPECIAL: '특실', ANY: '일반실/특실' };
+const OPENRUN_PHASE_BADGES = {
+    waiting: { label: '오픈 대기', className: 'bg-amber-100 text-amber-700' },
+    openrun: { label: '오픈런 진행 중', className: 'bg-red-100 text-red-700 animate-pulse' },
+    retry: { label: '취소표 대기 중', className: 'bg-blue-100 text-blue-700 animate-pulse' },
+};
+const HOLIDAY_DAY_LABELS = ['이틀 전', '전날', '당일', '다음날', '이틀 후'];
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+const getKstToday = () => new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+const formatShortDate = (dateStr) => {
+    if (!dateStr) return '';
+    const [, month, day] = dateStr.split('-');
+    const weekday = WEEKDAYS[new Date(`${dateStr}T00:00:00`).getDay()];
+    return `${Number(month)}/${Number(day)}(${weekday})`;
+};
+
+function Countdown({ target }) {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const intervalId = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(intervalId);
+    }, []);
+
+    const diff = new Date(target).getTime() - now;
+    if (!target || Number.isNaN(diff)) return null;
+    if (diff <= 0) return <span>오픈됨</span>;
+
+    const totalSeconds = Math.floor(diff / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const pad = (n) => String(n).padStart(2, '0');
+    const hms = `${pad(Math.floor((totalSeconds % 86400) / 3600))}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(totalSeconds % 60)}`;
+    return <span className="font-mono">{days > 0 ? `${days}일 ` : ''}{hms}</span>;
+}
+
+function OpenRunTaskCard({ task, onStop, isLoading }) {
+    const badge = OPENRUN_PHASE_BADGES[task.phase] || OPENRUN_PHASE_BADGES.waiting;
+    const openDate = task.open_at ? task.open_at.slice(0, 10) : '';
+    const openTime = task.open_at ? task.open_at.slice(11, 16) : '';
+
+    return (
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-red-200 space-y-3">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                <span className="text-sm font-semibold text-slate-600">
+                    🧧 명절 오픈런 · {formatShortDate(task.date)} {task.time}~{task.end_time}
+                </span>
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${badge.className}`}>{badge.label}</span>
+            </div>
+            <div className="flex justify-between items-baseline">
+                <span className="font-bold text-lg text-slate-700">{task.dep} → {task.arr}</span>
+                <span className="text-sm text-slate-500 font-medium">{OPENRUN_SEAT_LABELS[task.seat_type] || '일반실'} / 성인 {task.adults}명</span>
+            </div>
+            {task.preferred_trains?.length > 0 && (
+                <p className="text-sm text-slate-600">지정 열차: {task.preferred_trains.join(', ')}</p>
+            )}
+            <div className="bg-slate-50 rounded-md p-3 text-sm text-slate-700 space-y-1">
+                <div className="flex justify-between">
+                    <span>예매 오픈</span>
+                    <span className="font-semibold">{formatShortDate(openDate)} {openTime}</span>
+                </div>
+                {task.phase === 'waiting' && (
+                    <div className="flex justify-between">
+                        <span>남은 시간</span>
+                        <span className="font-bold text-red-600"><Countdown target={task.open_at} /></span>
+                    </div>
+                )}
+                {task.message && <p className="text-xs text-slate-500 pt-1">{task.message}</p>}
+            </div>
+            <button onClick={() => onStop(task.task_id)} disabled={isLoading} className="w-full bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition disabled:bg-slate-400">중단하기</button>
+        </div>
+    );
+}
+
+function OpenRunScreen({ active }) {
+    const favorites = (() => {
+        try {
+            return JSON.parse(localStorage.getItem('trainFavorites') || '[]');
+        } catch (e) {
+            return [];
+        }
+    })();
+
+    const [holidays, setHolidays] = useState([]);
+    const [selectedHoliday, setSelectedHoliday] = useState(null);
+    const [depStation, setDepStation] = useState(favorites[0]?.dep || '서울');
+    const [arrStation, setArrStation] = useState(favorites[0]?.arr || '부산');
+    const [travelDate, setTravelDate] = useState('');
+    const [startTime, setStartTime] = useState('06:00');
+    const [endTime, setEndTime] = useState('12:00');
+    const [adults, setAdults] = useState('1');
+    const [seatType, setSeatType] = useState('GENERAL');
+    const [preferredTrains, setPreferredTrains] = useState('');
+    const [openDate, setOpenDate] = useState(getKstToday());
+    const [openTime, setOpenTime] = useState('07:00');
+    const [burstMinutes, setBurstMinutes] = useState('30');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState('');
+    const [result, setResult] = useState(null);
+    const [tasks, setTasks] = useState([]);
+    const [stopTaskId, setStopTaskId] = useState(null);
+
+    useEffect(() => {
+        fetch('/api/holidays')
+            .then(res => res.json())
+            .then(data => {
+                const list = data.holidays || [];
+                setHolidays(list);
+                if (list.length > 0) {
+                    setSelectedHoliday(list[0]);
+                    setTravelDate(prev => prev || list[0].dates[1]);
+                }
+            })
+            .catch(e => console.error('Failed to fetch holidays', e));
+    }, []);
+
+    const fetchTasks = async () => {
+        try {
+            const response = await fetch('/api/auto-reserve-status', { headers: getAuthHeaders() });
+            if (!response.ok) return;
+            const data = await response.json();
+            setTasks((data.tasks || []).filter(t => t.mode === 'openrun' && t.status === 'running'));
+        } catch (e) {
+            console.error('Polling error:', e);
+        }
+    };
+
+    useEffect(() => {
+        let intervalId;
+        if (active) {
+            fetchTasks();
+            intervalId = setInterval(fetchTasks, 10000);
+        }
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    }, [active]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (depStation === arrStation) {
+            setError('출발역과 도착역이 같습니다.');
+            return;
+        }
+        if (endTime < startTime) {
+            setError('희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.');
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const body = new URLSearchParams({
+                dep: depStation,
+                arr: arrStation,
+                date: travelDate,
+                time: startTime,
+                end_time: endTime,
+                adults,
+                seat_type: seatType,
+                preferred_trains: preferredTrains,
+                open_date: openDate,
+                open_time: openTime,
+                burst_minutes: burstMinutes,
+            });
+            const response = await fetch('/api/start-openrun', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...getAuthHeaders() },
+                body,
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error_message || '오픈런 등록 중 오류가 발생했습니다.');
+
+            setResult({
+                success: true,
+                message: `${data.message}\n오픈 약 90초 전에 자동으로 로그인한 뒤, 오픈 순간부터 좌석이 잡힐 때까지 예매를 시도합니다. 앱을 종료하셔도 푸시/이메일 알림으로 알려드립니다.`
+            });
+            fetchTasks();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleStop = async () => {
+        const task_id = stopTaskId;
+        setStopTaskId(null);
+        if (!task_id) return;
+        try {
+            const response = await fetch('/api/stop-auto-reserve', { method: 'POST', body: new URLSearchParams({ task_id }), headers: getAuthHeaders() });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error_message);
+            await fetchTasks();
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
+    const inputClass = "w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+    return (
+        <div className="space-y-4">
+            <div className="text-center mb-1">
+                <CalendarIcon className="w-12 h-12 mx-auto text-red-500 mb-1.5" />
+                <h1 className="text-3xl font-bold text-slate-800">명절 오픈런</h1>
+                <p className="text-sm text-slate-500 mt-1">설날·추석 승차권 예매 오픈에 맞춰 자동으로 예매합니다.</p>
+            </div>
+
+            {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded" role="alert">{error}</div>}
+
+            {tasks.length > 0 && (
+                <div className="space-y-3">
+                    <h2 className="text-lg font-bold text-slate-800">등록된 오픈런</h2>
+                    {tasks.map(task => (
+                        <OpenRunTaskCard key={task.task_id} task={task} onStop={setStopTaskId} isLoading={isSubmitting} />
+                    ))}
+                </div>
+            )}
+
+            <div className="bg-white rounded-xl shadow-lg p-5">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    {holidays.length > 0 && (
+                        <div>
+                            <label className="block text-slate-700 text-sm font-bold mb-1">명절 선택</label>
+                            <div className="flex flex-wrap gap-2">
+                                {holidays.map(holiday => (
+                                    <button
+                                        type="button"
+                                        key={holiday.date}
+                                        onClick={() => { setSelectedHoliday(holiday); setTravelDate(holiday.dates[1]); }}
+                                        className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition ${selectedHoliday?.date === holiday.date ? 'bg-red-500 text-white border-red-500' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {holiday.name}
+                                    </button>
+                                ))}
+                            </div>
+                            {selectedHoliday && (
+                                <div className="grid grid-cols-5 gap-1 mt-2">
+                                    {selectedHoliday.dates.map((d, i) => (
+                                        <button
+                                            type="button"
+                                            key={d}
+                                            onClick={() => setTravelDate(d)}
+                                            className={`py-1.5 rounded-md text-xs border transition ${travelDate === d ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                                        >
+                                            <div className="font-semibold">{HOLIDAY_DAY_LABELS[i]}</div>
+                                            <div>{formatShortDate(d)}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="relative bg-slate-50 rounded-lg p-4">
+                        <div className="flex items-center gap-2">
+                            <StationSelect label="출발" name="openrun_dep" stations={ALL_STATIONS} value={depStation} onChange={e => setDepStation(e.target.value)} />
+                            <button type="button" onClick={() => { setDepStation(arrStation); setArrStation(depStation); }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-2 w-10 h-10 flex items-center justify-center border-4 border-white rounded-full bg-slate-200 hover:bg-slate-300 transition text-slate-600 z-10">
+                                <SwapIcon />
+                            </button>
+                            <StationSelect label="도착" name="openrun_arr" stations={ALL_STATIONS} value={arrStation} onChange={e => setArrStation(e.target.value)} />
+                        </div>
+                    </div>
+                    {favorites.length > 0 && (
+                        <div className="flex flex-wrap gap-2 -mt-2">
+                            {favorites.map((fav, index) => (
+                                <button type="button" key={index} onClick={() => { setDepStation(fav.dep); setArrStation(fav.arr); }} className="bg-white border border-slate-300 rounded-full px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                    ★ {fav.dep} → {fav.arr}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">탑승일</label>
+                        <input type="date" value={travelDate} onChange={e => setTravelDate(e.target.value)} required className={inputClass} />
+                    </div>
+
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">희망 출발 시간대</label>
+                        <div className="flex items-center gap-2">
+                            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} required className={`${inputClass} flex-1 min-w-0`} />
+                            <span className="text-slate-500">~</span>
+                            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} required className={`${inputClass} flex-1 min-w-0`} />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">이 시간대에 출발하는 열차 중 좌석이 남은 가장 이른 열차를 예매합니다.</p>
+                    </div>
+
+                    <div className="flex gap-2">
+                        <div className="flex-1">
+                            <label className="block text-slate-700 text-sm font-bold mb-1">성인 승객</label>
+                            <select value={adults} onChange={e => setAdults(e.target.value)} className={inputClass}>
+                                {[...Array(5).keys()].map(n => <option key={n + 1} value={n + 1}>{n + 1}명</option>)}
+                            </select>
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-slate-700 text-sm font-bold mb-1">좌석</label>
+                            <select value={seatType} onChange={e => setSeatType(e.target.value)} className={inputClass}>
+                                <option value="GENERAL">일반실</option>
+                                <option value="SPECIAL">특실</option>
+                                <option value="ANY">상관없음 (일반실 우선)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">특정 열차만 예매 (선택)</label>
+                        <input type="text" value={preferredTrains} onChange={e => setPreferredTrains(e.target.value)} placeholder="예: 101, 103 (입력 순서대로 우선 시도)" className={inputClass} />
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-4">
+                        <label className="block text-slate-700 text-sm font-bold mb-1">예매 오픈 일시</label>
+                        <div className="flex items-center border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden">
+                            <input type="date" value={openDate} onChange={e => setOpenDate(e.target.value)} required className="flex-1 min-w-0 px-3 py-2 border-r border-slate-300 focus:outline-none bg-white" />
+                            <input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} required className="flex-1 min-w-0 px-3 py-2 focus:outline-none bg-white" />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">코레일 공지사항에서 해당 노선의 명절 승차권 예매 오픈 일시를 확인해 입력하세요.</p>
+                    </div>
+
+                    <div>
+                        <label className="block text-slate-700 text-sm font-bold mb-1">오픈 직후 집중 시도 시간</label>
+                        <select value={burstMinutes} onChange={e => setBurstMinutes(e.target.value)} className={inputClass}>
+                            <option value="10">10분</option>
+                            <option value="30">30분</option>
+                            <option value="60">60분</option>
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">이후에는 5초 간격으로 취소표를 계속 확인합니다.</p>
+                    </div>
+
+                    <button type="submit" disabled={isSubmitting} className="w-full bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold py-3 px-4 rounded-lg hover:shadow-lg transition duration-300 disabled:from-slate-400 disabled:to-slate-300 flex justify-center items-center text-lg">
+                        {isSubmitting ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : '오픈런 등록하기'}
+                    </button>
+                </form>
+            </div>
+
+            <div className="bg-slate-100 rounded-xl p-5 text-sm text-slate-600 space-y-2 leading-relaxed">
+                <p className="font-bold text-slate-800">🧧 오픈런은 이렇게 동작해요</p>
+                <p>1. 예매 오픈 약 90초 전에 코레일에 미리 로그인합니다. (계정 오류는 이때 알려드립니다.)</p>
+                <p>2. 오픈 시각부터 희망 시간대 열차를 쉬지 않고 조회하여, 좌석이 남은 첫 열차를 바로 예매합니다.</p>
+                <p>3. 집중 시도 시간이 지나면 취소표 대기로 전환되며, 희망 시간대 열차가 모두 출발하면 종료됩니다.</p>
+                <p className="text-xs text-slate-500">* 서버가 켜져 있는 동안 동작하므로 브라우저나 앱은 종료해도 됩니다. 예매 성공 후에는 결제 기한 내에 꼭 결제해 주세요.</p>
+            </div>
+
+            {result && <ResultMessage result={result} onBack={() => setResult(null)} />}
+            <Modal
+                isOpen={!!stopTaskId}
+                title="오픈런 중단"
+                message="등록된 오픈런을 중단하시겠습니까?"
+                confirmText="중단하기"
+                cancelText="계속하기"
+                type="danger"
+                onConfirm={handleStop}
+                onCancel={() => setStopTaskId(null)}
+            />
         </div>
     );
 }
@@ -1306,7 +1682,9 @@ function SettingsScreen() {
 
                     <p>3. <strong>자동 예매 시도 (취소표 대기):</strong> 원하는 열차가 매진된 경우 <strong>[자동 예매 시도]</strong>를 누르면, 취소표가 발생할 때까지 5초 간격으로 시스템이 자동 재시도합니다. (예매 성공 시 브라우저 알림 및 이메일 알림이 발송됩니다.)</p>
 
-                    <p>4. <strong>결제 및 취소/환불:</strong> 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱 또는 레츠코레일 홈페이지</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.</p>
+                    <p>4. <strong>명절 오픈런:</strong> 설날·추석처럼 예매 오픈 시각이 정해진 경우 <strong>[명절 오픈런]</strong> 탭에서 구간, 희망 출발 시간대, 예매 오픈 일시를 등록하세요. 오픈 직전 자동 로그인 후 오픈 순간부터 좌석이 남은 첫 열차를 자동으로 예매합니다.</p>
+
+                    <p>5. <strong>결제 및 취소/환불:</strong> 예매가 성공하면 <strong>[예매 내역]</strong> 탭에서 결제 카드를 등록하여 즉시 결제하거나, <strong>코레일톡 앱 또는 레츠코레일 홈페이지</strong>에서 결제할 수 있습니다. 기한 내에 결제하지 않으면 예약이 자동 취소되므로 유의해 주세요.</p>
                 </div>
             </div>
         </div>
