@@ -6,7 +6,7 @@ import os
 import uuid
 import threading
 import time
-from datetime import datetime, timedelta, timezone, date as date_cls
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify
 from enum import Enum
 from pathlib import Path
@@ -17,11 +17,6 @@ from dotenv import load_dotenv
 
 from ktx import SoldOutError, KorailError, TrainType, NoResultsError, MacroError, NeedToLoginError
 from mailer import send_email
-
-try:
-    from korean_lunar_calendar import KoreanLunarCalendar
-except ImportError:  # 명절 날짜 추천 기능만 비활성화
-    KoreanLunarCalendar = None
 
 # 한국 표준시 (서머타임 없음)
 KST = timezone(timedelta(hours=9))
@@ -59,9 +54,11 @@ active_auto_reserves = {}
 TASKS_FILE = os.path.join(current_dir, '../data/tasks.json')
 os.makedirs(os.path.dirname(TASKS_FILE), exist_ok=True)
 
+_tasks_file_lock = threading.Lock()
+
 def save_tasks():
     tasks_to_save = {}
-    for task_id, task in active_auto_reserves.items():
+    for task_id, task in list(active_auto_reserves.items()):
         if task['status'] == 'running':
             tasks_to_save[task_id] = {
                 'status': task['status'],
@@ -69,8 +66,12 @@ def save_tasks():
                 'message': task['message']
             }
     try:
-        with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(tasks_to_save, f, ensure_ascii=False)
+        # 여러 스레드가 동시에 저장해도 파일이 깨지지 않도록 잠금 후 임시 파일에 쓰고 교체
+        with _tasks_file_lock:
+            tmp_file = TASKS_FILE + '.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(tasks_to_save, f, ensure_ascii=False)
+            os.replace(tmp_file, TASKS_FILE)
     except Exception as e:
         app.logger.error(f"Failed to save tasks: {e}")
 
@@ -576,10 +577,10 @@ def auto_reserve_worker(task_id, train_type, dep, arr, date, time_val, train_num
     # 스레드 종료 시 (성공, 실패 모두) 상태 파일 업데이트 (메모리에서는 프론트가 ACK할 때 삭제)
     save_tasks()
 
-# --- 명절(설날/추석) 오픈런 ---
-# 명절 승차권은 코레일이 공지한 일시에 일제히 예매가 열리므로, 특정 열차를 미리 고를 수 없습니다.
-# 오픈 시각 직전에 미리 로그인해 두었다가, 오픈 순간부터 희망 시간대의 열차를 반복 조회하여
-# 좌석이 잡히는 첫 열차를 예매합니다. 집중 시도 시간이 지나면 일반 취소표 대기 간격으로 계속 시도합니다.
+# --- 명절 오픈런 ---
+# 좌석이 풀리는 시각(예매 오픈 일시)에 맞춰 미리 로그인해 두었다가, 오픈 순간부터 희망 시간대의 열차를
+# 반복 조회하여 좌석이 잡히는 첫 열차를 예매합니다. 왕복은 가는 편/오는 편을 한 작업에서 함께 처리하여
+# 로그인 세션을 하나만 사용합니다. 집중 시도 시간이 지나면 일반 취소표 대기 간격으로 계속 시도합니다.
 OPENRUN_PRELOGIN_SECONDS = 90   # 오픈 90초 전 미리 로그인 (계정 오류를 오픈 전에 발견)
 OPENRUN_LEAD_SECONDS = 2        # 서버 시각 오차 대비 오픈 2초 전부터 조회 시작
 OPENRUN_BURST_INTERVAL = 0.3    # 집중 시도 중 조회 간격 (search_train 자체에 0.5~1.2초 지연 포함)
@@ -592,6 +593,7 @@ OPENRUN_SEAT_TYPES = {
     'SPECIAL': ('특실', ktx.ReserveOption.SPECIAL_ONLY, lambda t: t.has_special_seat),
     'ANY': ('일반실/특실', ktx.ReserveOption.GENERAL_FIRST, lambda t: t.has_seat),
 }
+OPENRUN_LEG_FIELDS = ('dep', 'arr', 'date', 'time', 'end_time', 'open_date', 'open_time', 'preferred_trains')
 
 def parse_kst(date_val, time_val):
     """'YYYY-MM-DD', 'HH:MM' 문자열을 한국 시간 datetime으로 변환합니다."""
@@ -619,18 +621,34 @@ def wait_until(task, target_dt):
         time.sleep(min(remaining, 1.0))
     return False
 
-def iter_openrun_pages(client, details):
+def get_openrun_legs(details):
+    """오픈런 구간 목록을 반환합니다. 왕복 도입 전에 저장된 편도 작업도 구간 1개로 변환합니다."""
+    if not details.get('legs'):
+        leg = {field: details.get(field) for field in OPENRUN_LEG_FIELDS}
+        leg.update(label='가는 편', status='pending', reserved_train=details.get('reserved_train', ''))
+        if leg['reserved_train']:
+            leg['status'] = 'reserved'
+        details['legs'] = [leg]
+    return details['legs']
+
+def leg_open_dt(leg):
+    return parse_kst(leg['open_date'], leg['open_time'])
+
+def leg_last_departure(leg):
+    return parse_kst(leg['date'], leg['end_time'])
+
+def iter_openrun_pages(client, leg, adults):
     """희망 시간대에 출발하는 열차를 조회 페이지 단위로 반환합니다."""
-    date_str = details['date'].replace('-', '')
-    end_hhmm = details['end_time'].replace(':', '')
+    date_str = leg['date'].replace('-', '')
+    end_hhmm = leg['end_time'].replace(':', '')
 
     seen = set()
-    current_time = details['time'].replace(':', '') + '00'
+    current_time = leg['time'].replace(':', '') + '00'
     for _ in range(OPENRUN_MAX_PAGES):
         try:
             page = client.search_train(
-                dep=details['dep'], arr=details['arr'], date=date_str, time=current_time,
-                passengers=[ktx.AdultPassenger(details['adults'])],
+                dep=leg['dep'], arr=leg['arr'], date=date_str, time=current_time,
+                passengers=[ktx.AdultPassenger(adults)],
                 include_no_seats=True, train_type=ktx.TrainType.KTX
             )
         except NoResultsError:
@@ -648,32 +666,44 @@ def iter_openrun_pages(client, details):
         next_dt = datetime.strptime(last_dep[:4], "%H%M") + timedelta(minutes=1)
         current_time = next_dt.strftime("%H%M") + "00"
 
-def iter_openrun_candidates(client, details):
+def iter_openrun_candidates(client, leg, adults, seat_type):
     """원하는 좌석이 남은 후보 열차를 우선순위 순으로 반환합니다.
     지정 열차가 없으면 이른 열차부터 페이지를 받는 즉시 반환하여 오픈 직후 한 발이라도 빨리 예매를 시도합니다."""
-    preferred = details.get('preferred_trains') or []
-    has_wanted_seat = OPENRUN_SEAT_TYPES[details['seat_type']][2]
+    preferred = leg.get('preferred_trains') or []
+    has_wanted_seat = OPENRUN_SEAT_TYPES[seat_type][2]
 
     if not preferred:
-        for trains in iter_openrun_pages(client, details):
+        for trains in iter_openrun_pages(client, leg, adults):
             yield from (t for t in trains if has_wanted_seat(t))
         return
 
     by_no = {}
-    for trains in iter_openrun_pages(client, details):
+    for trains in iter_openrun_pages(client, leg, adults):
         by_no.update((normalize_train_no(t.train_no), t) for t in trains)
     yield from (by_no[no] for no in preferred if no in by_no and has_wanted_seat(by_no[no]))
+
+def reserve_openrun_leg(client, leg, details, passengers, reserve_option):
+    """구간의 후보 열차를 차례로 예매 시도하여, 성공한 열차를 반환합니다 (없으면 None)."""
+    for train in iter_openrun_candidates(client, leg, details['adults'], details['seat_type']):
+        try:
+            client.reserve(train, passengers=passengers, option=reserve_option)
+            return train
+        except (SoldOutError, KorailError) as e:
+            if isinstance(e, NeedToLoginError) or not is_sold_out_error(e):
+                raise
+            # 조회와 예매 사이에 다른 사람이 좌석을 가져감 → 다음 후보 열차 시도
+    return None
 
 def openrun_worker(task_id, details):
     task = active_auto_reserves.get(task_id)
     if not task: return
 
     auth_dict = details.get('auth', {})
+    legs = get_openrun_legs(details)
     seat_label, reserve_option, _ = OPENRUN_SEAT_TYPES[details['seat_type']]
     passengers = [ktx.AdultPassenger(details['adults'])]
-    open_dt = parse_kst(details['open_date'], details['open_time'])
-    burst_until = open_dt + timedelta(minutes=details.get('burst_minutes', 30))
-    last_departure = parse_kst(details['date'], details['end_time'])
+    burst = timedelta(minutes=details.get('burst_minutes', 30))
+    lead = timedelta(seconds=OPENRUN_LEAD_SECONDS)
 
     def set_phase(phase, message):
         changed = task.get('phase') != phase or task.get('message') != message
@@ -687,44 +717,58 @@ def openrun_worker(task_id, details):
         task['message'] = message
         app.logger.error(f"Openrun task {task_id} failed: {message}")
 
-    app.logger.info(f"Openrun task {task_id} scheduled at {open_dt.isoformat()}.")
-
-    # 1) 오픈 직전까지 대기
-    prelogin_dt = open_dt - timedelta(seconds=OPENRUN_PRELOGIN_SECONDS)
-    if datetime.now(KST) < prelogin_dt:
-        set_phase('waiting', f"예매 오픈({open_dt:%m/%d %H:%M}) 대기 중")
-        if not wait_until(task, prelogin_dt):
+    def finish():
+        reserved = [f"{leg['label']} {leg['reserved_train']}" for leg in legs if leg['status'] == 'reserved']
+        missed = [leg['label'] for leg in legs if leg['status'] == 'expired']
+        if not reserved:
+            fail("희망 시간대의 열차가 모두 출발하여 오픈런을 종료했습니다.")
             return
+        task['status'] = 'success'
+        task['message'] = f"{', '.join(reserved)} 열차 예매 성공"
+        if missed:
+            task['message'] += f" ({', '.join(missed)}은 희망 시간대 열차가 모두 출발하여 예매하지 못했습니다)"
+        app.logger.info(f"Openrun task {task_id} finished: {task['message']}")
 
-    # 2) 사전 로그인 (계정 오류는 오픈 전에 실패 처리)
-    start_dt = open_dt - timedelta(seconds=OPENRUN_LEAD_SECONDS)
-    while task['status'] == 'running' and datetime.now(KST) < start_dt:
-        try:
-            get_ktx_client(force_login=True, user_id=auth_dict.get('ktx_id'), user_pw=auth_dict.get('ktx_pw'))
-            set_phase('waiting', f"로그인 완료, 예매 오픈({open_dt:%H:%M}) 대기 중")
-            break
-        except Exception as e:
-            if is_transient_error(e):
-                app.logger.warning(f"Openrun task {task_id} pre-login transient error: {e}")
-                time.sleep(5)
-                continue
-            fail(f"사전 로그인 실패: {e}")
-            save_tasks()
-            return
-    if not wait_until(task, start_dt):
-        save_tasks()
-        return
+    app.logger.info(f"Openrun task {task_id} scheduled: " + ", ".join(f"{leg['label']} {leg_open_dt(leg).isoformat()}" for leg in legs))
 
-    # 3) 오픈런 집중 시도 → 이후 취소표 대기
     force_login = False
+    logged_in_for = None  # 사전 로그인을 마친 오픈 시각
     last_error, same_error_count = None, 0
     while task['status'] == 'running':
         now = datetime.now(KST)
-        if now >= last_departure:
-            fail("희망 시간대의 열차가 모두 출발하여 오픈런을 종료했습니다.")
+        for leg in legs:
+            if leg['status'] == 'pending' and now >= leg_last_departure(leg):
+                leg['status'] = 'expired'
+                save_tasks()
+        pending = [leg for leg in legs if leg['status'] == 'pending']
+        if not pending:
+            finish()
             break
 
-        bursting = now < burst_until
+        active = [leg for leg in pending if now >= leg_open_dt(leg) - lead]
+        if not active:
+            # 1) 가장 가까운 오픈 시각까지 대기 → 2) 오픈 직전 사전 로그인 → 3) 오픈 직전까지 대기
+            next_open = min(leg_open_dt(leg) for leg in pending)
+            prelogin_dt = next_open - timedelta(seconds=OPENRUN_PRELOGIN_SECONDS)
+            if now < prelogin_dt:
+                set_phase('waiting', f"예매 오픈({next_open:%m/%d %H:%M}) 대기 중")
+                wait_until(task, prelogin_dt)
+            elif logged_in_for != next_open:
+                try:
+                    get_ktx_client(force_login=True, user_id=auth_dict.get('ktx_id'), user_pw=auth_dict.get('ktx_pw'))
+                    logged_in_for = next_open
+                    set_phase('waiting', f"로그인 완료, 예매 오픈({next_open:%H:%M}) 대기 중")
+                except Exception as e:
+                    if not is_transient_error(e):
+                        fail(f"사전 로그인 실패: {e}")
+                        break
+                    app.logger.warning(f"Openrun task {task_id} pre-login transient error: {e}")
+                    time.sleep(5)
+            else:
+                wait_until(task, next_open - lead)
+            continue
+
+        bursting = any(now < leg_open_dt(leg) + burst for leg in active)
         interval = OPENRUN_BURST_INTERVAL if bursting else OPENRUN_RETRY_INTERVAL
         if bursting:
             set_phase('openrun', "오픈런 진행 중 (집중 시도)")
@@ -735,28 +779,20 @@ def openrun_worker(task_id, details):
             client = get_ktx_client(force_login=force_login, user_id=auth_dict.get('ktx_id'), user_pw=auth_dict.get('ktx_pw'))
             force_login = False
 
-            reservation = target_train = None
-            for train in iter_openrun_candidates(client, details):
-                try:
-                    reservation = client.reserve(train, passengers=passengers, option=reserve_option)
-                    target_train = train
-                    break
-                except (SoldOutError, KorailError) as e:
-                    if isinstance(e, NeedToLoginError) or not is_sold_out_error(e):
-                        raise
-                    # 조회와 예매 사이에 다른 사람이 좌석을 가져감 → 다음 후보 열차 시도
+            for leg in active:
+                target_train = reserve_openrun_leg(client, leg, details, passengers, reserve_option)
+                if target_train is None:
+                    continue
+                leg['status'] = 'reserved'
+                leg['reserved_train'] = target_train.train_no
+                save_tasks()
+                when_text = f"{leg['date']} {target_train.dep_time[:2]}:{target_train.dep_time[2:4]} 출발"
+                notify_auto_reserve_success(target_train, auth_dict, when_text, details['adults'], seat_label, f"명절 오픈런({leg['label']}) 예매")
+                app.logger.info(f"Openrun task {task_id} {leg['label']} reserved: {target_train.train_no}")
 
-            if reservation is None:
+            last_error, same_error_count = None, 0
+            if any(leg['status'] == 'pending' for leg in active):
                 time.sleep(interval)
-                continue
-
-            task['status'] = 'success'
-            task['message'] = "예매 성공"
-            task['details']['reserved_train'] = target_train.train_no
-            when_text = f"{details['date']} {target_train.dep_time[:2]}:{target_train.dep_time[2:4]} 출발"
-            notify_auto_reserve_success(target_train, auth_dict, when_text, details['adults'], seat_label, "명절 오픈런 예매")
-            app.logger.info(f"Openrun task {task_id} success: {target_train.train_no}")
-            break
 
         except NoResultsError:
             # 예매 오픈 전이거나 해당 시간대 열차가 아직 조회되지 않음
@@ -788,64 +824,67 @@ def openrun_worker(task_id, details):
 
     save_tasks()
 
-def get_upcoming_holidays(today, count=4):
-    """다가오는 설날/추석과 전후 이틀의 날짜를 반환합니다."""
-    if KoreanLunarCalendar is None:
-        return []
-    holidays = []
-    for year in range(today.year, today.year + 3):
-        for name, (l_month, l_day) in (('설날', (1, 1)), ('추석', (8, 15))):
-            calendar = KoreanLunarCalendar()
-            if not calendar.setLunarDate(year, l_month, l_day, False):
-                continue
-            day = date_cls.fromisoformat(calendar.SolarIsoFormat())
-            if day + timedelta(days=2) < today:
-                continue
-            holidays.append({
-                'name': f"{day.year} {name}",
-                'date': day.isoformat(),
-                'dates': [(day + timedelta(days=offset)).isoformat() for offset in range(-2, 3)]
-            })
-    holidays.sort(key=lambda h: h['date'])
-    return holidays[:count]
+class OpenrunInputError(ValueError):
+    pass
 
-@app.route('/api/holidays')
-def holidays():
-    return jsonify({'holidays': get_upcoming_holidays(datetime.now(KST).date())})
+def build_openrun_leg(form_data, prefix, label, dep, arr):
+    """폼 입력에서 오픈런 구간 하나를 만들고 검증합니다."""
+    leg = {
+        'label': label,
+        'dep': dep,
+        'arr': arr,
+        'date': form_data.get(f'{prefix}date', ''),
+        'time': form_data.get(f'{prefix}time', ''),
+        'end_time': form_data.get(f'{prefix}end_time', ''),
+        'open_date': form_data.get(f'{prefix}open_date', ''),
+        'open_time': form_data.get(f'{prefix}open_time', ''),
+        'preferred_trains': parse_preferred_trains(form_data.get(f'{prefix}preferred_trains', '')),
+        'status': 'pending',
+        'reserved_train': '',
+    }
+    if not all(leg[field] for field in ('date', 'time', 'end_time', 'open_date', 'open_time')):
+        raise OpenrunInputError(f'{label}의 필수 정보가 누락되었습니다.')
+    try:
+        open_dt = leg_open_dt(leg)
+        first_departure = parse_kst(leg['date'], leg['time'])
+        last_departure = leg_last_departure(leg)
+    except ValueError:
+        raise OpenrunInputError(f'{label}의 날짜 또는 시간 형식이 올바르지 않습니다.')
+    if last_departure < first_departure:
+        raise OpenrunInputError(f'{label} 희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.')
+    if last_departure <= datetime.now(KST):
+        raise OpenrunInputError(f'{label} 희망 출발 시간대가 이미 지났습니다.')
+    if open_dt >= last_departure:
+        raise OpenrunInputError(f'{label} 예매 오픈 일시가 희망 출발 시간 이후입니다.')
+    return leg
 
 @app.route('/api/start-openrun', methods=['POST'])
 def start_openrun():
     form_data = request.form
     try:
         dep, arr = form_data.get('dep'), form_data.get('arr')
-        date_val = form_data.get('date', '')
-        start_time, end_time = form_data.get('time', ''), form_data.get('end_time', '')
-        open_date, open_time = form_data.get('open_date', ''), form_data.get('open_time', '')
+        trip_type = form_data.get('trip_type', 'oneway')
         adults = int(form_data.get('adults', 1))
         seat_type = form_data.get('seat_type', 'GENERAL')
         burst_minutes = int(form_data.get('burst_minutes', 30))
-        preferred_trains = parse_preferred_trains(form_data.get('preferred_trains', ''))
 
-        if not all([dep, arr, date_val, start_time, end_time, open_date, open_time]):
-            return jsonify({'error_message': '오픈런 등록을 위한 필수 정보가 누락되었습니다.'}), 400
+        if not dep or not arr:
+            return jsonify({'error_message': '출발역과 도착역을 선택해 주세요.'}), 400
         if dep == arr:
             return jsonify({'error_message': '출발역과 도착역이 같습니다.'}), 400
+        if trip_type not in ('oneway', 'round'):
+            return jsonify({'error_message': '여정 종류가 올바르지 않습니다.'}), 400
         if seat_type not in OPENRUN_SEAT_TYPES:
             return jsonify({'error_message': '좌석 종류가 올바르지 않습니다.'}), 400
         if not 1 <= adults <= 9 or not 1 <= burst_minutes <= 180:
             return jsonify({'error_message': '인원 또는 집중 시도 시간이 올바르지 않습니다.'}), 400
-        try:
-            open_dt = parse_kst(open_date, open_time)
-            first_departure = parse_kst(date_val, start_time)
-            last_departure = parse_kst(date_val, end_time)
-        except ValueError:
-            return jsonify({'error_message': '날짜 또는 시간 형식이 올바르지 않습니다.'}), 400
-        if last_departure < first_departure:
-            return jsonify({'error_message': '희망 출발 시간대의 종료 시각이 시작 시각보다 빠릅니다.'}), 400
-        if last_departure <= datetime.now(KST):
-            return jsonify({'error_message': '희망 출발 시간대가 이미 지났습니다.'}), 400
-        if open_dt >= last_departure:
-            return jsonify({'error_message': '예매 오픈 일시가 희망 출발 시간 이후입니다.'}), 400
+
+        legs = [build_openrun_leg(form_data, '', '가는 편', dep, arr)]
+        if trip_type == 'round':
+            return_leg = build_openrun_leg(form_data, 'return_', '오는 편', arr, dep)
+            if parse_kst(return_leg['date'], return_leg['time']) < parse_kst(legs[0]['date'], legs[0]['time']):
+                return jsonify({'error_message': '오는 편 탑승 일시가 가는 편보다 빠릅니다.'}), 400
+            legs.append(return_leg)
 
         auth = get_auth_from_headers()
         if not (auth.get('ktx_id') or os.environ.get('KTX_ID') or os.environ.get('SRT_ID')):
@@ -854,16 +893,11 @@ def start_openrun():
         task_id = str(uuid.uuid4())
         task_details = {
             'mode': 'openrun',
+            'trip_type': trip_type,
             'train_type': 'KTX',
-            'dep': dep,
-            'arr': arr,
-            'date': date_val,
-            'time': start_time,
-            'end_time': end_time,
-            'open_date': open_date,
-            'open_time': open_time,
+            **{field: legs[0][field] for field in OPENRUN_LEG_FIELDS},  # 편도 형식과의 호환용
+            'legs': legs,
             'burst_minutes': burst_minutes,
-            'preferred_trains': preferred_trains,
             'train_number': '',
             'seat_type': seat_type,
             'adults': adults,
@@ -884,12 +918,16 @@ def start_openrun():
 
         save_tasks()
 
+        first_open = min(leg_open_dt(leg) for leg in legs)
+        trip_label = '왕복 ' if trip_type == 'round' else ''
         return jsonify({
-            'message': f"{open_dt:%m월 %d일 %H:%M} 예매 오픈에 맞춰 오픈런이 등록되었습니다.",
+            'message': f"{first_open:%m월 %d일 %H:%M} 예매 오픈에 맞춰 {trip_label}오픈런이 등록되었습니다.",
             'task_id': task_id,
-            'open_at': open_dt.isoformat()
+            'open_at': first_open.isoformat()
         })
 
+    except OpenrunInputError as e:
+        return jsonify({'error_message': str(e)}), 400
     except ValueError:
         return jsonify({'error_message': '입력값 형식이 올바르지 않습니다.'}), 400
     except Exception as e:
@@ -961,11 +999,32 @@ def stop_auto_reserve():
             return jsonify({'error_message': '권한이 없습니다.'}), 403
     return jsonify({'error_message': '해당 작업을 찾을 수 없습니다.'}), 404
 
-def open_at_iso(details):
+def openrun_status_fields(details):
+    """상태 조회 응답에 들어갈 오픈런 구간 정보를 만듭니다."""
+    if details.get('mode') != 'openrun':
+        return {}
     try:
-        return parse_kst(details['open_date'], details['open_time']).isoformat()
-    except (KeyError, ValueError):
-        return ''
+        legs = get_openrun_legs(details)
+        pending_opens = [leg_open_dt(leg) for leg in legs if leg['status'] == 'pending']
+        next_open = min(pending_opens) if pending_opens else leg_open_dt(legs[0])
+    except (KeyError, TypeError, ValueError):
+        return {}
+    return {
+        'trip_type': details.get('trip_type', 'oneway'),
+        'open_at': next_open.isoformat(),
+        'legs': [{
+            'label': leg['label'],
+            'dep': leg['dep'],
+            'arr': leg['arr'],
+            'date': leg['date'],
+            'time': leg['time'],
+            'end_time': leg['end_time'],
+            'open_at': leg_open_dt(leg).isoformat(),
+            'preferred_trains': leg.get('preferred_trains') or [],
+            'status': leg['status'],
+            'reserved_train': leg.get('reserved_train', ''),
+        } for leg in legs]
+    }
 
 @app.route('/api/auto-reserve-status')
 def auto_reserve_status():
@@ -984,14 +1043,12 @@ def auto_reserve_status():
                 'arr': task.get('details', {}).get('arr', ''),
                 'date': task.get('details', {}).get('date', ''),
                 'time': task.get('details', {}).get('time', ''),
-                'train_number': task.get('details', {}).get('train_number') or task.get('details', {}).get('reserved_train', ''),
+                'train_number': task.get('details', {}).get('train_number', ''),
                 'adults': task.get('details', {}).get('adults', 1),
                 'seat_type': task.get('details', {}).get('seat_type', 'GENERAL'),
                 'mode': task.get('details', {}).get('mode', 'standby'),
                 'phase': task.get('phase', ''),
-                'end_time': task.get('details', {}).get('end_time', ''),
-                'open_at': open_at_iso(task.get('details', {})),
-                'preferred_trains': task.get('details', {}).get('preferred_trains', [])
+                **openrun_status_fields(task.get('details', {}))
             })
     return jsonify({'tasks': my_tasks})
 
