@@ -24,7 +24,7 @@
     max-width: 100%;
     -webkit-appearance: none;
     appearance: none;
-    min-height: 2.625rem;
+    min-height: 2.75rem;
   }
   .date-input::-webkit-date-and-time-value {
     text-align: left;
