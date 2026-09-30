@@ -153,7 +153,7 @@ export default function App() {
                         <SearchAndBookingFlow />
                     </div>
                     <div className={activeTab === 'openrun' ? '' : 'hidden'}>
-                        <OpenRunScreen active={activeTab === 'openrun'} />
+                        <OpenRunScreen />
                     </div>
                     <div className={activeTab === 'reservations' ? '' : 'hidden'}>
                         <ReservationsScreen active={activeTab === 'reservations'} />
@@ -1260,7 +1260,7 @@ function OpenRunLegFields({ title, route, leg, onChange }) {
     );
 }
 
-function OpenRunScreen({ active }) {
+function OpenRunScreen() {
     const favorites = (() => {
         try {
             return JSON.parse(localStorage.getItem('trainFavorites') || '[]');
@@ -1280,30 +1280,6 @@ function OpenRunScreen({ active }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [result, setResult] = useState(null);
-    const [tasks, setTasks] = useState([]);
-    const [stopTaskId, setStopTaskId] = useState(null);
-
-    const fetchTasks = async () => {
-        try {
-            const response = await fetch('/api/auto-reserve-status', { headers: getAuthHeaders() });
-            if (!response.ok) return;
-            const data = await response.json();
-            setTasks((data.tasks || []).filter(t => t.mode === 'openrun' && t.status === 'running'));
-        } catch (e) {
-            console.error('Polling error:', e);
-        }
-    };
-
-    useEffect(() => {
-        let intervalId;
-        if (active) {
-            fetchTasks();
-            intervalId = setInterval(fetchTasks, 10000);
-        }
-        return () => {
-            if (intervalId) clearInterval(intervalId);
-        };
-    }, [active]);
 
     const handleTripTypeChange = (type) => {
         setTripType(type);
@@ -1365,9 +1341,8 @@ function OpenRunScreen({ active }) {
 
             setResult({
                 success: true,
-                message: `${data.message}\n오픈 약 90초 전에 자동으로 로그인한 뒤, 오픈 순간부터 좌석이 잡힐 때까지 예매를 시도합니다. 앱을 종료하셔도 푸시/이메일 알림으로 알려드립니다.`
+                message: `${data.message}\n오픈 약 90초 전에 자동으로 로그인한 뒤, 오픈 순간부터 좌석이 잡힐 때까지 예매를 시도합니다. 진행 상황은 [예매 내역] 탭에서 확인·중단할 수 있으며, 앱을 종료하셔도 푸시/이메일 알림으로 알려드립니다.`
             });
-            fetchTasks();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -1375,19 +1350,6 @@ function OpenRunScreen({ active }) {
         }
     };
 
-    const handleStop = async () => {
-        const task_id = stopTaskId;
-        setStopTaskId(null);
-        if (!task_id) return;
-        try {
-            const response = await fetch('/api/stop-auto-reserve', { method: 'POST', body: new URLSearchParams({ task_id }), headers: getAuthHeaders() });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error_message);
-            await fetchTasks();
-        } catch (err) {
-            setError(err.message);
-        }
-    };
 
     const selectClass = "w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -1407,14 +1369,6 @@ function OpenRunScreen({ active }) {
 
             {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded" role="alert">{error}</div>}
 
-            {tasks.length > 0 && (
-                <div className="space-y-3">
-                    <h2 className="text-lg font-bold text-slate-800">등록된 오픈런</h2>
-                    {tasks.map(task => (
-                        <OpenRunTaskCard key={task.task_id} task={task} onStop={setStopTaskId} isLoading={isSubmitting} />
-                    ))}
-                </div>
-            )}
 
             <div className="bg-white rounded-xl shadow-lg p-4">
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -1498,16 +1452,6 @@ function OpenRunScreen({ active }) {
             </div>
 
             {result && <ResultMessage result={result} onBack={() => setResult(null)} />}
-            <Modal
-                isOpen={!!stopTaskId}
-                title="오픈런 중단"
-                message="등록된 오픈런을 중단하시겠습니까?"
-                confirmText="중단하기"
-                cancelText="계속하기"
-                type="danger"
-                onConfirm={handleStop}
-                onCancel={() => setStopTaskId(null)}
-            />
         </div>
     );
 }
