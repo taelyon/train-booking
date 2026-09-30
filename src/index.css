@@ -14,3 +14,19 @@
   }
 }
 
+
+@layer components {
+  /* iOS Safari는 date/time 입력의 고유 너비를 유지하여 부모 카드 밖으로 넘치므로 너비를 강제로 맞춤 */
+  .date-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 2.625rem;
+  }
+  .date-input::-webkit-date-and-time-value {
+    text-align: left;
+  }
+}

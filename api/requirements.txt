@@ -18,4 +18,3 @@ urllib3
 Werkzeug
 pytz
 pywebpush
-korean-lunar-calendar
