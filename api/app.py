@@ -501,7 +501,8 @@ def is_transient_error(e):
         "점검", "정리작업", "정리 작업", "정기점검", "정기 점검", "시스템 점검", "서비스 점검",
         "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "500 Internal Server Error",
         "connection", "timeout", "network", "disconnected", "호스트", "연결", "시간 초과",
-        "netfunnel", "NetFunnel", "Expecting value"
+        "netfunnel", "NetFunnel", "Expecting value",
+        ktx.LOGIN_RESPONSE_ERROR  # 코레일이 예상과 다른 형식으로 응답한 경우 (일시적인 경우가 많아 재시도)
     ]
     if any(kw in msg for kw in transient_keywords):
         return True

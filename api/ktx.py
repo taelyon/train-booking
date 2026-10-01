@@ -755,6 +755,10 @@ class NetFunnelHelper:
         )
 
 
+# 코레일이 예상과 다른 형식으로 응답했을 때의 안내 (app.py에서 일시적 오류로 분류하는 데도 사용)
+LOGIN_RESPONSE_ERROR = "응답을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
 class Korail:
     """Main Korail API interface"""
 
@@ -806,13 +810,31 @@ class Korail:
         if self.verbose:
             print(f"[*] {msg}")
 
+    def _raise_login_error(self, j, step):
+        """로그인 응답이 실패이거나 예상과 다른 형식일 때, 코레일이 보낸 메시지로 예외를 발생시킵니다.
+        (점검 시간·차단 등에는 strResult 없이 h_msg_cd/h_msg_txt만 오므로 바로 꺼내 쓰면 KeyError가 납니다)"""
+        if not isinstance(j, dict):
+            j = {}
+        code = j.get("h_msg_cd") or j.get("strResult") or ""
+        if code in MacroError.codes:
+            raise MacroError(code)
+        msg = j.get("strErrMsg") or j.get("h_msg_txt")
+        if not msg:
+            if j.get("strResult") == "FAIL":
+                msg = "로그인 정보가 올바르지 않습니다."
+            else:
+                # 원인 파악용으로 응답 항목 이름만 남김 (값에는 개인정보가 있을 수 있어 출력하지 않음)
+                print(f"[코레일 {step} 응답 형식 오류] 항목: {list(j.keys())}")
+                msg = f"코레일 {step} {LOGIN_RESPONSE_ERROR}"
+        raise KorailError(msg, code or "NO_RESULT")
+
     def __enc_password(self, password):
         url = API_ENDPOINTS["code"]
         data = {"code": "app.login.cphd"}
         r = self._session.post(url, data=data)
         j = json.loads(r.text)
 
-        if j["strResult"] == "SUCC" and j.get("app.login.cphd"):
+        if isinstance(j, dict) and j.get("strResult") == "SUCC" and j.get("app.login.cphd"):
             self._idx = j["app.login.cphd"]["idx"]
             key = j["app.login.cphd"]["key"]
             encrypt_key = key.encode("utf-8")
@@ -822,7 +844,7 @@ class Korail:
             return base64.b64encode(
                 base64.b64encode(cipher.encrypt(padded_data))
             ).decode("utf-8")
-        return False
+        self._raise_login_error(j, "로그인 준비")
 
     def login(self, korail_id=None, korail_pw=None):
         if korail_id:
@@ -855,12 +877,12 @@ class Korail:
         self._log(r.text)
         j = json.loads(r.text)
 
-        if j["strResult"] == "SUCC" and j.get("strMbCrdNo"):
-            self._key = j['Key'] # 서버에서 발급한 Key를 저장하여 이후 API 호출에 사용
+        if isinstance(j, dict) and j.get("strResult") == "SUCC" and j.get("strMbCrdNo"):
+            self._key = j.get('Key', self._key) # 서버에서 발급한 Key를 저장하여 이후 API 호출에 사용
             self.membership_number = j["strMbCrdNo"]
-            self.name = j["strCustNm"]
-            self.email = j["strEmailAdr"]
-            self.phone_number = j["strCpNo"]
+            self.name = j.get("strCustNm")
+            self.email = j.get("strEmailAdr")
+            self.phone_number = j.get("strCpNo")
             print(
                 f"로그인 성공: {self.name} (멤버십번호: {self.membership_number}, 전화번호: {self.phone_number})"
             )
@@ -871,9 +893,7 @@ class Korail:
         
         self.logined = False
         # 로그인 실패 시 서버가 보내준 구체적인 에러 메시지를 포함하여 예외 발생
-        error_msg = j.get("strErrMsg") or j.get("h_msg_txt") or "로그인 정보가 올바르지 않습니다."
-        error_code = j.get("strResult") or j.get("h_msg_cd")
-        raise KorailError(error_msg, error_code)
+        self._raise_login_error(j, "로그인")
 
     def logout(self):
         r = self._session.get(API_ENDPOINTS["logout"])
