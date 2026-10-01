@@ -302,7 +302,7 @@ def send_push_notification(title, body, auth):
 
 def get_auth_from_headers():
     """헤더에서 코레일 계정 정보를 추출합니다 (레거시 헤더 지원)."""
-    ktx_id = request.headers.get('X-KTX-ID') or request.headers.get('X-SRT-ID')
+    ktx_id = (request.headers.get('X-KTX-ID') or request.headers.get('X-SRT-ID') or '').strip() or None
     ktx_pw = request.headers.get('X-KTX-PW') or request.headers.get('X-SRT-PW')
     return {
         'ktx_id': ktx_id,
@@ -501,8 +501,9 @@ def is_transient_error(e):
         "점검", "정리작업", "정리 작업", "정기점검", "정기 점검", "시스템 점검", "서비스 점검",
         "502 Bad Gateway", "503 Service Unavailable", "504 Gateway Timeout", "500 Internal Server Error",
         "connection", "timeout", "network", "disconnected", "호스트", "연결", "시간 초과",
-        "netfunnel", "NetFunnel", "Expecting value",
-        ktx.LOGIN_RESPONSE_ERROR  # 코레일이 예상과 다른 형식으로 응답한 경우 (일시적인 경우가 많아 재시도)
+        "netfunnel", "NetFunnel", "Expecting value"
+        # 코레일이 예상과 다른 형식으로 로그인 응답을 보낸 경우(LOGIN_RESPONSE_ERROR)는 일부러 넣지 않음:
+        # 실제로는 로그인 거절일 수 있어, 반복 재시도하면 비밀번호 오류 누적으로 계정이 잠길 수 있음
     ]
     if any(kw in msg for kw in transient_keywords):
         return True

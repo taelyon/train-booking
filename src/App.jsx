@@ -1532,9 +1532,12 @@ function SettingsScreen() {
     };
 
     const handleSave = () => {
+        const ktxId = credentials.ktxId.trim();
+        setCredentials(prev => ({ ...prev, ktxId }));
         const toSave = {
             ...credentials,
-            srtId: credentials.ktxId,
+            ktxId,
+            srtId: ktxId,
             srtPw: credentials.ktxPw
         };
         localStorage.setItem('trainCredentials', JSON.stringify(toSave));
@@ -1566,7 +1569,7 @@ function SettingsScreen() {
                         value={credentials.ktxId}
                         onChange={handleChange}
                         className={ui.input}
-                        placeholder="아이디 또는 멤버십 번호 입력"
+                        placeholder="예: 1234567890 / 010-1234-5678 / 이메일"
                     />
                 </div>
                 <div>
