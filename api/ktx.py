@@ -137,6 +137,18 @@ class DynaPathMasterEngine:
 # Constants
 EMAIL_REGEX = re.compile(r"[^@]+@[^@]+\.[^@]+")
 PHONE_NUMBER_REGEX = re.compile(r"(\d{3})-(\d{3,4})-(\d{4})")
+# 하이픈 없이 입력한 휴대폰 번호 (예: 01012345678)
+PLAIN_PHONE_NUMBER_REGEX = re.compile(r"^010\d{8}$")
+
+
+def normalize_login_id(korail_id):
+    """로그인 아이디를 코레일이 기대하는 형식으로 맞춥니다.
+    앞뒤 공백을 지우고, 하이픈 없는 휴대폰 번호는 010-1234-5678 형식으로 바꿉니다.
+    (하이픈이 없으면 멤버십 번호로 분류되어 로그인이 실패합니다)"""
+    korail_id = (korail_id or "").strip()
+    if PLAIN_PHONE_NUMBER_REGEX.match(korail_id):
+        korail_id = f"{korail_id[:3]}-{korail_id[3:7]}-{korail_id[7:]}"
+    return korail_id
 
 USER_AGENT = "Dalvik/2.1.0 (Linux; U; Android 15; SM-S928N Build/AP3A.240905.015.A2)"
 
@@ -818,14 +830,22 @@ class Korail:
         code = j.get("h_msg_cd") or j.get("strResult") or ""
         if code in MacroError.codes:
             raise MacroError(code)
-        msg = j.get("strErrMsg") or j.get("h_msg_txt")
+        # 결과/오류 코드·메시지로 보이는 짧은 항목들 (이름·전화번호 등 개인정보 항목은 제외)
+        status_fields = {
+            k: v for k, v in j.items()
+            if isinstance(v, (str, int)) and len(str(v)) <= 200
+            and re.search(r"(msg|cd|code|rslt|result|err)", k, re.IGNORECASE)
+        }
+        msg = j.get("strErrMsg") or j.get("h_msg_txt") or next(
+            (v for k, v in status_fields.items() if re.search(r"msg", k, re.IGNORECASE) and str(v).strip()), None
+        )
         if not msg:
             if j.get("strResult") == "FAIL":
                 msg = "로그인 정보가 올바르지 않습니다."
             else:
-                # 원인 파악용으로 응답 항목 이름만 남김 (값에는 개인정보가 있을 수 있어 출력하지 않음)
-                print(f"[코레일 {step} 응답 형식 오류] 항목: {list(j.keys())}")
                 msg = f"코레일 {step} {LOGIN_RESPONSE_ERROR}"
+        # 원인 파악용: 응답 항목 이름과 결과 코드·메시지 항목만 로그에 남김
+        print(f"[코레일 {step} 실패] 항목: {list(j.keys())} / 결과: {status_fields}")
         raise KorailError(msg, code or "NO_RESULT")
 
     def __enc_password(self, password):
@@ -851,6 +871,7 @@ class Korail:
             self.korail_id = korail_id
         if korail_pw:
             self.korail_pw = korail_pw
+        self.korail_id = normalize_login_id(self.korail_id)
 
         txt_input_flg = (
             "5"

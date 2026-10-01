@@ -302,7 +302,7 @@ def send_push_notification(title, body, auth):
 
 def get_auth_from_headers():
     """헤더에서 코레일 계정 정보를 추출합니다 (레거시 헤더 지원)."""
-    ktx_id = request.headers.get('X-KTX-ID') or request.headers.get('X-SRT-ID')
+    ktx_id = (request.headers.get('X-KTX-ID') or request.headers.get('X-SRT-ID') or '').strip() or None
     ktx_pw = request.headers.get('X-KTX-PW') or request.headers.get('X-SRT-PW')
     return {
         'ktx_id': ktx_id,
