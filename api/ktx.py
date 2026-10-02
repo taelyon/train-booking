@@ -16,6 +16,7 @@ import time
 time_mod = time
 import uuid
 import random
+import secrets
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from datetime import datetime, timedelta
@@ -647,7 +648,7 @@ class SoldOutError(KorailError):
 
 class MacroError(KorailError):
     """매크로/봇 탐지 에러 - 코레일 서버가 자동화 요청을 차단할 때 발생"""
-    codes = {"MACRO ERROR"}
+    codes = {"MACRO ERROR", "-2000", -2000}
 
     def __init__(self, code=None):
         super().__init__("코레일 서버가 자동화 요청을 차단했습니다. 잠시 후 다시 시도해 주세요.", code)
@@ -784,7 +785,7 @@ class Korail:
         self._device = "AD"
         self._version = "250601002"
         self._sid_key = b"2485dd54d9deaa36"
-        self._device_id = "558a4f02041657ea"
+        self._device_id = secrets.token_hex(8)
         self._machine_id = str(uuid.uuid4())
         self._key = "korail1234567890"
         self._idx = None
@@ -827,18 +828,20 @@ class Korail:
         (점검 시간·차단 등에는 strResult 없이 h_msg_cd/h_msg_txt만 오므로 바로 꺼내 쓰면 KeyError가 납니다)"""
         if not isinstance(j, dict):
             j = {}
-        code = j.get("h_msg_cd") or j.get("strResult") or ""
-        if code in MacroError.codes:
-            raise MacroError(code)
+        code = j.get("h_msg_cd") or j.get("strResult") or j.get("code") or ""
+        msg = j.get("strErrMsg") or j.get("h_msg_txt") or j.get("message")
+        if str(code) in MacroError.codes or code in MacroError.codes:
+            raise MacroError(code if not msg else f"{msg} ({code})")
         # 결과/오류 코드·메시지로 보이는 짧은 항목들 (이름·전화번호 등 개인정보 항목은 제외)
         status_fields = {
             k: v for k, v in j.items()
             if isinstance(v, (str, int)) and len(str(v)) <= 200
-            and re.search(r"(msg|cd|code|rslt|result|err)", k, re.IGNORECASE)
+            and re.search(r"(msg|message|cd|code|rslt|result|err)", k, re.IGNORECASE)
         }
-        msg = j.get("strErrMsg") or j.get("h_msg_txt") or next(
-            (v for k, v in status_fields.items() if re.search(r"msg", k, re.IGNORECASE) and str(v).strip()), None
-        )
+        if not msg:
+            msg = next(
+                (v for k, v in status_fields.items() if re.search(r"(msg|message)", k, re.IGNORECASE) and str(v).strip()), None
+            )
         if not msg:
             if j.get("strResult") == "FAIL":
                 msg = "로그인 정보가 올바르지 않습니다."
@@ -846,7 +849,7 @@ class Korail:
                 msg = f"코레일 {step} {LOGIN_RESPONSE_ERROR}"
         # 원인 파악용: 응답 항목 이름과 결과 코드·메시지 항목만 로그에 남김
         print(f"[코레일 {step} 실패] 항목: {list(j.keys())} / 결과: {status_fields}")
-        raise KorailError(msg, code or "NO_RESULT")
+        raise KorailError(msg, str(code) or "NO_RESULT")
 
     def __enc_password(self, password):
         url = API_ENDPOINTS["code"]
